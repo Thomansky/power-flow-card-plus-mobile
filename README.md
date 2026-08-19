@@ -1,9 +1,7 @@
 # Power Flow Card Plus Mobile
 
 > **Vibe-coded.** Diese Karte ist vollständig im Dialog mit einem KI-Assistenten
-> entstanden — Entwurf, Code, Tests und diese Zeilen. Sie läuft und ist geprüft,
-> aber sie hat nie ein klassisches Code-Review durch einen zweiten Menschen
-> gesehen. Wer sie einsetzt, sollte das wissen. Fehlerberichte sind willkommen.
+> entstanden — Entwurf, Code, Tests und diese Zeilen.
 
 > **Eigenständiges Projekt.** Trotz des ähnlichen Namens hat diese Karte nichts
 > mit [power-flow-card-plus](https://github.com/flixlix/power-flow-card-plus) zu
@@ -21,29 +19,18 @@ immer die zwei, die gerade am meisten ziehen — mit dem jeweiligen Auto darunte
 
 Eine Datei, kein Build-Schritt, keine Abhängigkeiten.
 
+[![Als benutzerdefiniertes Repository in HACS öffnen](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Thomansky&repository=power-flow-card-plus-mobile&category=Dashboard)
+
 ---
 
 ## Wie es aussieht
 
+<img src="docs/images/karte-handy.jpg" alt="Die Karte auf einem Handybildschirm" width="420">
+
 Ein hoher, schmaler Graph, der die Bildschirmhöhe ausnutzt statt sie zu
-verschenken:
-
-```
-        Sonne          Zweite Quelle
-           \               /
-            \_____ ● _____/          ← Summe der Erzeugung
-                   |
-    Netz ───────── ● ───────── Zuhause
-                  /|\                ← Summe des Verbrauchs
-    Speicher 1 ──/ |     ┌───┴───┐
-    Speicher 2 ──/       │       │
-                      Wallbox  Wallbox   ← nur die ladenden
-                         │       │
-                       Auto    Auto      ← nur wenn die Wallbox lädt
-```
-
-Die Linien sind so dick wie der Fluss stark ist und laufen in Flussrichtung.
-Netz, Verteilknoten und Zuhause stehen auf einer Höhe; Ringe zeigen Ladestände.
+verschenken. Die Linien sind so dick wie der Fluss stark ist und laufen in
+Flussrichtung. Netz, Verteilknoten und Zuhause stehen auf einer Höhe; Ringe
+zeigen Ladestände.
 
 **Die beiden Kugeln in der Mitte** zeigen zwei Summen:
 
@@ -64,6 +51,13 @@ nicht im selben Moment aktualisieren. Ein paar Prozent sind normal.
 ## Einbauen
 
 ### Über HACS
+
+Am schnellsten über diesen Knopf – er öffnet HACS in Deinem Home Assistant
+und trägt das Repository gleich ein:
+
+[![Als benutzerdefiniertes Repository in HACS öffnen](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Thomansky&repository=power-flow-card-plus-mobile&category=Dashboard)
+
+Von Hand geht es genauso:
 
 1. HACS → ⋮ → *Benutzerdefinierte Repositories*
 2. Diese Repository-Adresse eintragen, Kategorie **Dashboard**
@@ -441,8 +435,9 @@ cd power-flow-card-plus-mobile && python3 -m http.server 8777
 
 Die Menüführung des visuellen Editors – Hauptmenü, Unterseiten, einklappbare
 Listeneinträge – ist [power-flow-card-plus](https://github.com/flixlix/power-flow-card-plus)
-von flixlix nachempfunden. Dort ist das sauber gelöst, und es gab keinen Grund,
-es anders zu machen. Übernommen wurde nichts als die Idee.
+von [@flixlix](https://github.com/flixlix) nachempfunden. Dort ist das sauber
+gelöst, und es gab keinen Grund, es anders zu machen. Übernommen wurde nichts
+als die Idee.
 
 ---
 
