@@ -19,7 +19,7 @@ jobs:
       contents: write
     steps:
       - name: Repository auschecken
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       # Ohne diese Prüfung wäre irgendwann ein Release v1.1.0 unterwegs, in dem
       # sich die Karte selbst als v1.0.0 in die Konsole schreibt.
