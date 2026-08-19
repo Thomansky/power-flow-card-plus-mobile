@@ -1,0 +1,3 @@
+# Unter Windows schreibt Git sonst leicht CRLF ins Repository. Im Release-Asset
+# sieht das unschön aus und erzeugt bei jedem Commit Diff-Rauschen.
+* text=auto eol=lf

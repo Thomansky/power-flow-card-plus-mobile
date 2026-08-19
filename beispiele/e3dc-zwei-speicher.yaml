@@ -1,0 +1,103 @@
+# Power Flow Card Plus Mobile – Beispiel für eine E3/DC-Anlage
+#
+# Gedacht für Anlagen mit zwei Speichern und mehreren Wallboxen, die ihre
+# Leistung unipolar melden: Laden und Entladen als zwei getrennte Sensoren,
+# die nie negativ werden. Genau so liefert es die Integration
+# torbennehmer/hacs-e3dc (Domäne e3dc_rscp).
+#
+# Die Entitäts-IDs hier sind Platzhalter. Ersetz sie durch Deine eigenen –
+# am bequemsten im visuellen Editor, dort filtert die Auswahl nach Domäne.
+
+type: custom:power-flow-card-plus-mobile
+title: Energiefluss
+
+# ------------------------------------------------------------------ Erzeugung
+pv: sensor.wechselrichter_solarleistung
+
+# Optional. Ein zweiter Strang, eine zweite Anlage, ein Blockheizkraftwerk –
+# was immer zusätzlich einspeist. Weglassen, wenn es das nicht gibt.
+external: sensor.wechselrichter_zusatzerzeugung
+
+# ----------------------------------------------------------------------- Netz
+# Zwei Möglichkeiten, je nachdem was Deine Sensoren können:
+#
+#   a) ein Zähler mit Vorzeichen, positiv = Bezug:
+#        grid: sensor.zweirichtungszaehler
+#
+#   b) zwei getrennte Sensoren, beide nie negativ:
+grid:
+  consumption: sensor.netzbezug
+  production: sensor.netzeinspeisung
+
+# --------------------------------------------------------------------- Zuhause
+house: sensor.hausverbrauch
+
+# ------------------------------------------------------------------- Speicher
+# Höchstens zwei. Wer nur einen hat, lässt den zweiten Eintrag weg.
+batteries:
+  - name: Hausspeicher
+    icon: mdi:home-battery
+    charge: sensor.speicher1_ladeleistung
+    discharge: sensor.speicher1_entladeleistung
+    soc: sensor.speicher1_ladezustand
+
+  - name: Erweiterung
+    icon: mdi:battery-plus-variant
+    charge: sensor.speicher2_ladeleistung
+    discharge: sensor.speicher2_entladeleistung
+    soc: sensor.speicher2_ladezustand
+
+# ------------------------------------------------------------------ Wallboxen
+# Bis zu vier lassen sich einrichten. Gezeichnet werden immer nur die zwei mit
+# der höchsten Ladeleistung – lädt keine, bleibt der untere Bereich leer.
+#
+# Meldet eine Box ihren Netz- und ihren Sonnenanteil getrennt, trägst Du beide
+# Sensoren ein; sie werden addiert.
+#
+# Das Auto ist optional und erscheint nur, solange seine Wallbox lädt.
+wallboxes:
+  - name: Garage
+    icon: mdi:ev-station
+    power:
+      - sensor.wallbox_garage_netzanteil
+      - sensor.wallbox_garage_sonnenanteil
+    car: sensor.auto1_ladezustand
+    car_name: Kombi
+    car_icon: mdi:car-estate
+
+  - name: Stellplatz
+    icon: mdi:ev-station
+    power: sensor.wallbox_stellplatz_leistung
+    car: sensor.auto2_ladezustand
+    car_name: Zweitwagen
+    car_icon: mdi:car-electric
+
+# --------------------------------------------------------------------- Symbole
+# Alles frei wählbar, jedes MDI-Symbol geht.
+icons:
+  pv: mdi:solar-power-variant
+  external: mdi:solar-panel-large
+  grid: mdi:transmission-tower
+  house: mdi:home
+
+# --------------------------------------------------------------------- Farben
+# Erlaubt sind Hex-Werte, Home Assistants benannte Themenfarben (amber,
+# light-blue, teal …) und RGB-Listen. Für die Speicher bedeutet "auto":
+# die Farbe folgt dem Ladestand, rot bei leer, grün bei voll.
+colors:
+  pv: "#FFA800"
+  external: "#FF5A2D"
+  grid_import: "#033C8C"
+  grid_export: "#025CED"
+  house: "#3ED96B"
+  battery: auto
+  wallboxes:
+    - "#942192"
+    - "#14B8C4"
+  cars:
+    - "#8E86FF"
+    - "#D07BFF"
+
+# ------------------------------------------------------------------ Feinheiten
+threshold: 20     # darunter gilt eine Wallbox als „lädt nicht"
+min_height: 520   # Wunschhöhe des Graphen in Pixeln

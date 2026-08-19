@@ -1,0 +1,58 @@
+name: Release
+
+# Ein Tag der Form v1.2.3 löst alles aus. Die Versionsnummer im Quelltext ist
+# die Quelle der Wahrheit; der Tag wird dagegen geprüft, nicht daraus erzeugt.
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-*"
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: Karte an den Release hängen
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Repository auschecken
+        uses: actions/checkout@v5
+
+      # Ohne diese Prüfung wäre irgendwann ein Release v1.1.0 unterwegs, in dem
+      # sich die Karte selbst als v1.0.0 in die Konsole schreibt.
+      - name: Version im Quelltext gegen den Tag prüfen
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          TAG="${TAG%%-*}"
+          SRC=$(sed -n 's/^const PPM_VERSION = "\(.*\)";$/\1/p' power-flow-card-plus-mobile.js)
+          echo "Tag: $TAG   Quelltext: $SRC"
+          if [ -z "$SRC" ]; then
+            echo "::error file=power-flow-card-plus-mobile.js::PPM_VERSION nicht gefunden."
+            exit 1
+          fi
+          if [ "$TAG" != "$SRC" ]; then
+            echo "::error file=power-flow-card-plus-mobile.js::PPM_VERSION ist \"$SRC\", der Tag sagt \"$TAG\"."
+            exit 1
+          fi
+
+      - name: Syntax der Karte prüfen
+        run: node --check power-flow-card-plus-mobile.js
+
+      # gh ist auf dem Runner vorinstalliert – das spart eine Fremd-Action in
+      # der Lieferkette. Anlegen und Anhängen in einem Aufruf, damit es auch
+      # dann klappt, wenn Releases im Repository unveränderlich gestellt sind.
+      - name: Release anlegen und Datei anhängen
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PRE=""
+          case "$GITHUB_REF_NAME" in *-*) PRE="--prerelease" ;; esac
+          gh release create "$GITHUB_REF_NAME" \
+            power-flow-card-plus-mobile.js \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes \
+            --verify-tag \
+            $PRE

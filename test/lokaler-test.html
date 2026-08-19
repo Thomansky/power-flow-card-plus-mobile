@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>Power Flow Card Plus Mobile – lokaler Prüfstand</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: #16181D; color: #E8EAF0; min-height: 100vh;
+    font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+    padding: 18px;
+  }
+  h1 { font-size: 16px; margin: 0 0 4px; letter-spacing: .01em; }
+  p.sub { margin: 0 0 16px; color: #8A93A6; font-size: 12.5px; }
+  .bar { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 16px; }
+  button {
+    background: #23262E; color: #D6DAE4; border: 1px solid #333844;
+    border-radius: 9px; padding: 7px 12px; font-size: 12.5px; cursor: pointer;
+    font-family: inherit;
+  }
+  button:hover { background: #2B2F39; }
+  button.on { background: #27E0A5; border-color: #27E0A5; color: #0B0E13; font-weight: 700; }
+  .frames { display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-start; }
+  .frame { }
+  .frame > .cap { font-size: 11.5px; color: #8A93A6; margin-bottom: 6px; }
+  .phone {
+    width: 390px; height: 780px; border-radius: 34px; overflow: hidden;
+    border: 1px solid #333844; background: #0B0E13;
+  }
+  .narrow { width: 320px; height: 620px; }
+  .wide   { width: 500px; height: 560px; }
+  .log {
+    margin-top: 16px; padding: 10px 12px; background: #1B1E25;
+    border: 1px solid #2A2E38; border-radius: 10px; font-size: 12px;
+    white-space: pre-wrap; color: #9AA3B5; max-height: 190px; overflow: auto;
+  }
+</style>
+</head>
+<body>
+
+<h1>Power Flow Card Plus Mobile — lokaler Prüfstand</h1>
+<p class="sub">Läuft ohne Home Assistant. Die Karte bekommt ein nachgebautes <code>hass</code>-Objekt.</p>
+
+<div class="bar" id="bar"></div>
+
+<div class="frames">
+  <div class="frame">
+    <div class="cap">iPhone 15/16 — 390 × 780</div>
+    <div class="phone" id="slot-a"></div>
+  </div>
+  <div class="frame">
+    <div class="cap">Schmal — 320 × 620</div>
+    <div class="phone narrow" id="slot-b"></div>
+  </div>
+  <div class="frame">
+    <div class="cap">Breit / Tablet — 500 × 560</div>
+    <div class="phone wide" id="slot-c"></div>
+  </div>
+</div>
+
+<div class="log" id="log">Bereit.</div>
+
+<script>
+  // --- Home-Assistant-Bausteine nachbauen, damit die Karte ohne HA lebt ----
+  customElements.define("ha-card", class extends HTMLElement {
+    constructor() {
+      super();
+      this.attachShadow({ mode: "open" }).innerHTML =
+        '<style>:host{display:block;height:100%}</style><slot></slot>';
+    }
+  });
+
+  const log = (m) => {
+    const box = document.getElementById("log");
+    box.textContent += "\n" + m;
+    box.scrollTop = box.scrollHeight;
+  };
+  window.addEventListener("error", (e) => log("FEHLER: " + e.message));
+</script>
+
+<script src="../power-flow-card-plus-mobile.js"></script>
+
+<script>
+(function () {
+  // ------------------------------------------------------------ Szenarien
+  // Werte in Watt, Ladestände in Prozent.
+  const SZENARIEN = [
+    { name: "Dein Screenshot", pv: 5480, ext: 7740, grid: -8550, house: 4670,
+      b: [[0, 83], [0, 61]], wb: [0, 0, 0], car: [64, 88] },
+    { name: "Sonne & Laden", pv: 8240, ext: 4120, grid: -980, house: 9860,
+      b: [[1900, 76], [1420, 54]], wb: [7400, 0, 240], car: [42, 88] },
+    { name: "Nacht", pv: 0, ext: 0, grid: 1460, house: 2130,
+      b: [[-380, 22], [-290, 17]], wb: [0, 0, 0], car: [96, 88] },
+    { name: "Speicher lädt", pv: 6100, ext: 2400, grid: -120, house: 2980,
+      b: [[2900, 41], [2600, 33]], wb: [0, 0, 0], car: [64, 88] },
+    { name: "Nur 1 Speicher", pv: 3200, ext: 0, grid: 400, house: 3900,
+      b: [[-700, 46]], wb: [1200], car: [55] },
+    { name: "Ohne Autos", pv: 4400, ext: 0, grid: -1100, house: 3300,
+      b: [[400, 70], [380, 66]], wb: [900, 0, 0], car: [] },
+    { name: "Alles aus", pv: 0, ext: 0, grid: 0, house: 0,
+      b: [[0, 50], [0, 50]], wb: [0, 0, 0], car: [0, 0] },
+    { name: "Sensor fehlt", pv: null, ext: 7740, grid: -8550, house: 4670,
+      b: [[0, 83], [0, null]], wb: [0, null, 0], car: [64, 88], kaputt: true },
+    // So liefert die E3DC-Integration: nie negativ, dafür je zwei Sensoren.
+    { name: "E3DC geteilt", pv: 5480, ext: 7740, house: 4670,
+      bezug: 0, einspeisung: 8550,
+      bSplit: [[2000, 0, 83], [0, 500, 61]], wb: [0, 0, 0], car: [64, 88], split: true },
+  ];
+
+  function baueHass(s) {
+    const states = {};
+    const setze = (id, wert, einheit) => {
+      states[id] = {
+        entity_id: id,
+        state: wert == null ? "unavailable" : String(wert),
+        attributes: { unit_of_measurement: einheit, friendly_name: id },
+      };
+    };
+    setze("sensor.pv", s.pv, "W");
+    setze("sensor.ext", s.ext, "W");
+    setze("sensor.house", s.house, "W");
+    s.wb.forEach((w, i) => setze("sensor.wb" + (i + 1), w, "W"));
+    s.car.forEach((c, i) => setze("sensor.car" + (i + 1) + "_soc", c, "%"));
+
+    if (s.split) {
+      setze("sensor.bezug", s.bezug, "W");
+      setze("sensor.einspeisung", s.einspeisung, "W");
+      s.bSplit.forEach((b, i) => {
+        setze("sensor.bat" + (i + 1) + "_charge", b[0], "W");
+        setze("sensor.bat" + (i + 1) + "_discharge", b[1], "W");
+        setze("sensor.bat" + (i + 1) + "_soc", b[2], "%");
+      });
+    } else {
+      setze("sensor.grid", s.grid, "W");
+      s.b.forEach((b, i) => {
+        setze("sensor.bat" + (i + 1) + "_power", b[0], "W");
+        setze("sensor.bat" + (i + 1) + "_soc", b[1], "%");
+      });
+    }
+    if (s.kaputt) delete states["sensor.wb2"];   // Entität gibt es gar nicht
+    return { states, themes: {}, language: "de" };
+  }
+
+  function baueConfig(s) {
+    const gemeinsam = {
+      type: "custom:power-flow-card-plus-mobile",
+      title: "Energiefluss",
+      pv: "sensor.pv",
+      external: "sensor.ext",
+      house: "sensor.house",
+      wallboxes: s.wb.map((_, i) => ({ power: "sensor.wb" + (i + 1), name: "WB " + (i + 1) })),
+      cars: s.car.map((_, i) => ({ soc: "sensor.car" + (i + 1) + "_soc", name: "Auto " + (i + 1) })),
+    };
+
+    if (s.split) {
+      return Object.assign(gemeinsam, {
+        grid: { consumption: "sensor.bezug", production: "sensor.einspeisung" },
+        batteries: s.bSplit.map((_, i) => ({
+          power: { charge: "sensor.bat" + (i + 1) + "_charge",
+                   discharge: "sensor.bat" + (i + 1) + "_discharge" },
+          soc: "sensor.bat" + (i + 1) + "_soc",
+          name: "Batterie " + (i + 1),
+        })),
+      });
+    }
+
+    return Object.assign(gemeinsam, {
+      grid: "sensor.grid",
+      batteries: s.b.map((_, i) => ({
+        power: "sensor.bat" + (i + 1) + "_power",
+        soc: "sensor.bat" + (i + 1) + "_soc",
+        name: "Batterie " + (i + 1),
+      })),
+    });
+  }
+
+  const SLOTS = ["slot-a", "slot-b", "slot-c"];
+
+  function zeige(index) {
+    const s = SZENARIEN[index];
+    document.querySelectorAll("#bar button").forEach((b, i) =>
+      b.classList.toggle("on", i === index));
+
+    SLOTS.forEach((id) => {
+      const slot = document.getElementById(id);
+      slot.innerHTML = "";
+      try {
+        const karte = document.createElement("power-flow-card-plus-mobile");
+        karte.setConfig(baueConfig(s));
+        slot.appendChild(karte);
+        karte.hass = baueHass(s);
+      } catch (err) {
+        slot.innerHTML = '<div style="padding:14px;color:#FF8A7A;font-size:12px">' +
+          "setConfig hat abgelehnt: " + err.message + "</div>";
+        log("setConfig(" + s.name + "): " + err.message);
+      }
+    });
+    log("Szenario: " + s.name);
+  }
+
+  const bar = document.getElementById("bar");
+  SZENARIEN.forEach((s, i) => {
+    const b = document.createElement("button");
+    b.textContent = s.name;
+    b.onclick = () => zeige(i);
+    bar.appendChild(b);
+  });
+
+  // Fehlerhafte Konfigurationen müssen sauber abgelehnt werden.
+  const pruefeAblehnung = () => {
+    const faelle = [
+      { cfg: {}, warum: "leere Konfiguration" },
+      { cfg: { type: "x", batteries: [1, 2, 3].map(() => ({})) }, warum: "drei Batterien" },
+      { cfg: { type: "x", house: "sensor.h", cars: [1, 2, 3].map(() => ({})) }, warum: "drei Autos" },
+    ];
+    faelle.forEach((f) => {
+      const k = document.createElement("power-flow-card-plus-mobile");
+      try {
+        k.setConfig(f.cfg);
+        log("PROBLEM: " + f.warum + " wurde NICHT abgelehnt");
+      } catch (e) {
+        log("ok – abgelehnt (" + f.warum + "): " + e.message);
+      }
+    });
+  };
+
+  zeige(0);
+  pruefeAblehnung();
+})();
+</script>
+</body>
+</html>

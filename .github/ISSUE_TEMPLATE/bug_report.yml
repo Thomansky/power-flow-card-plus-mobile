@@ -1,0 +1,141 @@
+name: Fehlerbericht
+description: Etwas an der Karte funktioniert nicht wie beschrieben.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Danke für den Bericht.
+
+        Bitte füll vor allem **Kartenversion**, **Home-Assistant-Version** und
+        **YAML-Konfiguration** aus. Ohne diese drei lässt sich fast kein Fehler
+        nachstellen, und die erste Antwort wäre sonst nur eine Rückfrage.
+
+  - type: checkboxes
+    id: vorab
+    attributes:
+      label: Vorab
+      options:
+        - label: Ich benutze die neueste Version der Karte.
+          required: true
+        - label: Ich habe die offenen und geschlossenen Issues durchsucht.
+          required: true
+        - label: Ich habe das Frontend hart neu geladen (Strg+F5).
+          required: true
+
+  - type: input
+    id: karten-version
+    attributes:
+      label: Version der Karte
+      description: >
+        Steht beim Laden in der Browser-Konsole ("POWER-FLOW-CARD-PLUS-MOBILE v1.0.0")
+        und in HACS in der Zeile der Karte.
+      placeholder: "1.0.0"
+    validations:
+      required: true
+
+  - type: input
+    id: ha-version
+    attributes:
+      label: Home-Assistant-Version
+      description: >
+        Einstellungen → System → Reparaturen → Drei-Punkte-Menü →
+        Systeminformationen. Die Core-Version genügt.
+      placeholder: "2026.8.1"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: installation
+    attributes:
+      label: Wie ist die Karte installiert?
+      options:
+        - HACS
+        - Manuell nach /config/www kopiert
+        - Anders (bitte unten beschreiben)
+      default: 0
+    validations:
+      required: true
+
+  - type: textarea
+    id: konfiguration
+    attributes:
+      label: YAML-Konfiguration der Karte
+      description: >
+        Karte bearbeiten → Drei-Punkte-Menü → „Im YAML-Editor bearbeiten" →
+        alles kopieren. Entitäts-IDs können drin bleiben, wenn Dir das recht
+        ist; Tokens, Passwörter und externe Adressen bitte entfernen.
+      placeholder: |
+        type: custom:power-flow-card-plus-mobile
+        pv: sensor.pv_leistung
+        ...
+      render: yaml
+    validations:
+      required: true
+
+  - type: textarea
+    id: erwartet
+    attributes:
+      label: Erwartetes Verhalten
+    validations:
+      required: true
+
+  - type: textarea
+    id: tatsaechlich
+    attributes:
+      label: Tatsächliches Verhalten
+      description: Was passiert stattdessen? Wenn möglich mit Schritten zum Nachstellen.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: sensor-bauart
+    attributes:
+      label: Wie melden Deine Sensoren?
+      description: >
+        Häufigste Fehlerquelle. Ein Sensor mit Vorzeichen, oder zwei getrennte,
+        die nie negativ werden (so liefert es zum Beispiel E3/DC)?
+      multiple: true
+      options:
+        - Netz – ein Sensor mit Vorzeichen
+        - Netz – getrennt (consumption/production)
+        - Speicher – ein Sensor mit Vorzeichen
+        - Speicher – getrennt (charge/discharge)
+        - Weiß ich nicht
+    validations:
+      required: true
+
+  - type: dropdown
+    id: umgebung
+    attributes:
+      label: Wo tritt der Fehler auf?
+      multiple: true
+      options:
+        - Companion-App Android
+        - Companion-App iOS
+        - Browser auf dem Handy
+        - Browser auf dem Desktop
+    validations:
+      required: true
+
+  - type: textarea
+    id: konsole
+    attributes:
+      label: Meldungen aus der Browser-Konsole
+      description: >
+        F12 drücken, Reiter „Konsole", Seite neu laden, rote Meldungen
+        einfügen. Leer lassen, wenn nichts erscheint.
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots
+      description: >
+        Bilder lassen sich direkt in dieses Feld ziehen. Ein Foto der falsch
+        gezeichneten Karte hilft fast immer.
+    validations:
+      required: false

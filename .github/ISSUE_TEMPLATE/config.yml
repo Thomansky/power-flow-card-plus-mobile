@@ -1,0 +1,11 @@
+# Leere Issues abschalten, damit Fragen nicht als Fehlerbericht ankommen.
+# Den Discussions-Link nur behalten, wenn Discussions im Repository wirklich
+# aktiviert ist – sonst zeigt er ins Leere.
+blank_issues_enabled: false
+contact_links:
+  - name: Frage oder Idee
+    url: https://github.com/thomansky/power-flow-card-plus-mobile/discussions
+    about: Fragen zur Einrichtung und Wünsche bitte hier, nicht als Fehlerbericht.
+  - name: Home-Assistant-Community
+    url: https://community.home-assistant.io/
+    about: Allgemeine HA-Fragen, die nicht an dieser Karte liegen.

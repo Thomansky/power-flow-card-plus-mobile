@@ -1,0 +1,40 @@
+name: Validate
+
+# Läuft bei jedem Push und Pull Request, dazu einmal wöchentlich: HACS ändert
+# seine Regeln gelegentlich, und ein Repository, das monatelang niemand anfasst,
+# soll trotzdem merken, wenn es plötzlich durchfällt.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "0 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  syntax:
+    name: JavaScript-Syntax
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # Kein Build, kein Bundler – aber wenigstens soll die Datei parsen,
+      # bevor sie irgendwo als Release landet.
+      - name: Datei parsen
+        run: node --check power-flow-card-plus-mobile.js
+
+  hacs:
+    name: HACS
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # Der erfolgreiche Lauf dieses Jobs ist Pflichtnachweis, wenn die Karte
+      # einmal in den HACS-Standardkatalog aufgenommen werden soll.
+      - name: HACS-Validierung
+        uses: hacs/action@main
+        with:
+          category: plugin

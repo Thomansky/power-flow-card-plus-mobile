@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>Editor-Prüfstand</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 18px; background: #16181D; color: #E8EAF0;
+    font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+    --divider-color: #333844;
+    --primary-text-color: #E8EAF0;
+    --secondary-text-color: #8A93A6;
+    --secondary-background-color: #23262E;
+  }
+  h1 { font-size: 16px; margin: 0 0 14px; }
+  .spalten { display: grid; grid-template-columns: 460px 1fr; gap: 20px; align-items: start; }
+  .kasten { background: #1B1E25; border: 1px solid #2A2E38; border-radius: 10px; padding: 12px; }
+  .kasten h2 { font-size: 12px; margin: 0 0 9px; color: #8A93A6; text-transform: uppercase; letter-spacing: .06em; }
+  pre { margin: 0; font: 11.5px/1.5 ui-monospace, Consolas, monospace; white-space: pre-wrap; color: #B8C0CE; }
+  .pass { color: #27E0A5; } .fail { color: #FF7A6B; }
+  #log { max-height: 520px; overflow: auto; }
+</style>
+</head>
+<body>
+
+<h1>Editor-Prüfstand — Logik ohne Home Assistant</h1>
+
+<div class="spalten">
+  <div class="kasten"><h2>Der Editor</h2><div id="host"></div></div>
+  <div>
+    <div class="kasten" style="margin-bottom:14px">
+      <h2>Zuletzt gemeldete Konfiguration</h2>
+      <pre id="cfg">–</pre>
+    </div>
+    <div class="kasten"><h2>Prüfungen</h2><pre id="log"></pre></div>
+  </div>
+</div>
+
+<script>
+  // ---- Home-Assistant-Bausteine nachbauen -------------------------------
+  customElements.define("ha-icon", class extends HTMLElement {});
+
+  customElements.define("ha-form", class extends HTMLElement {
+    set schema(v) { this._schema = v; this._paint(); }
+    get schema() { return this._schema; }
+    set data(v) { this._data = v || {}; this._paint(); }
+    get data() { return this._data || {}; }
+    set hass(v) { this._hass = v; }
+    set computeLabel(v) { this._label = v; }
+
+    _flach(schema, aus = []) {
+      (schema || []).forEach(s => {
+        if (s.type === "grid" || s.type === "expandable") this._flach(s.schema, aus);
+        else aus.push(s);
+      });
+      return aus;
+    }
+
+    _paint() {
+      if (!this._schema) return;
+      const felder = this._flach(this._schema);
+      const kennung = felder.map(f => f.name).join("|");
+      if (this._kennung !== kennung) {
+        this._kennung = kennung;
+        this.innerHTML = felder.map(f => {
+          const l = this._label ? this._label(f) : f.name;
+          const sel = f.selector || {};
+          if (sel.boolean) return '<label><input type="checkbox" data-n="' + f.name + '"> ' + l + "</label>";
+          if (sel.select) {
+            const o = sel.select.options.map(x => '<option value="' + x.value + '">' + x.label + "</option>").join("");
+            return "<label>" + l + '<br><select data-n="' + f.name + '">' + o + "</select></label>";
+          }
+          if (sel.entity && sel.entity.multiple)
+            return "<label>" + l + ' (mehrere)<br><input data-n="' + f.name + '" data-multi="1"></label>';
+          return "<label>" + l + '<br><input data-n="' + f.name + '"></label>';
+        }).join("");
+        this.querySelectorAll("[data-n]").forEach(inp => {
+          inp.addEventListener("input", () => this._melde());
+          inp.addEventListener("change", () => this._melde());
+        });
+      }
+      this.querySelectorAll("[data-n]").forEach(inp => {
+        const v = this._data ? this._data[inp.dataset.n] : undefined;
+        if (inp.type === "checkbox") inp.checked = !!v;
+        else if (inp.dataset.multi) inp.value = Array.isArray(v) ? v.join(",") : (v || "");
+        else inp.value = v == null ? "" : v;
+      });
+    }
+
+    _melde() {
+      const wert = { ...(this._data || {}) };
+      this.querySelectorAll("[data-n]").forEach(inp => {
+        const n = inp.dataset.n;
+        if (inp.type === "checkbox") wert[n] = inp.checked;
+        else if (inp.dataset.multi) wert[n] = inp.value.split(",").map(s => s.trim()).filter(Boolean);
+        else wert[n] = inp.value === "" ? undefined : inp.value;
+      });
+      this.dispatchEvent(new CustomEvent("value-changed", {
+        detail: { value: wert }, bubbles: true, composed: true
+      }));
+    }
+  });
+
+  window.loadCardHelpers = async () => ({ createCardElement: () => ({ constructor: {} }) });
+</script>
+
+<script src="../power-flow-card-plus-mobile.js"></script>
+
+<script>
+(function () {
+  const log = [];
+  const male = () => {
+    document.getElementById("log").innerHTML = log.map(z =>
+      z.startsWith("  FEHL") ? '<span class="fail">' + z + "</span>"
+      : (z.startsWith("  ok") || z.startsWith("  Alle")) ? '<span class="pass">' + z + "</span>" : z
+    ).join("\n");
+  };
+  const pruefe = (name, ok, extra) => {
+    log.push((ok ? "  ok   " : "  FEHL ") + name + (extra ? "   " + extra : ""));
+    male();
+  };
+  const warte = (ms) => new Promise(r => setTimeout(r, ms));
+  const bereit = async () => { while (editor._schreibt) await warte(10); };
+
+  // Eine vollstaendige Konfiguration, wie sie in der Praxis vorkommt: zwei
+  // Speicher mit getrennten Lade- und Entladesensoren, drei Wallboxen, davon
+  // zwei mit Auto, und eine Box, die Netz- und Sonnenanteil getrennt meldet.
+  // Bewusst mit Platzhalter-IDs – ein Pruefstand gehoert ins Repository, die
+  // Entitaetsnamen einer realen Anlage nicht.
+  const ECHT = Object.freeze({
+    type: "custom:power-flow-card-plus-mobile",
+    title: "Energiefluss",
+    pv: "sensor.wechselrichter_solarleistung",
+    external: "sensor.wechselrichter_zusatzerzeugung",
+    grid: "sensor.zweirichtungszaehler",
+    house: "sensor.hausverbrauch",
+    batteries: [
+      { name: "Hausspeicher", charge: "sensor.speicher1_ladeleistung",
+        discharge: "sensor.speicher1_entladeleistung", soc: "sensor.speicher1_ladezustand" },
+      { name: "Erweiterung", charge: "sensor.speicher2_ladeleistung",
+        discharge: "sensor.speicher2_entladeleistung", soc: "sensor.speicher2_ladezustand" },
+    ],
+    wallboxes: [
+      { name: "Garage", power: ["sensor.wallbox_garage_netzanteil", "sensor.wallbox_garage_sonnenanteil"],
+        car: "sensor.auto1_ladezustand", car_name: "Kombi" },
+      { name: "Stellplatz", power: ["sensor.wallbox_stellplatz_netzanteil", "sensor.wallbox_stellplatz_sonnenanteil"] },
+      { name: "Carport", power: "sensor.wallbox_carport_leistung",
+        car: "sensor.auto2_ladezustand", car_name: "Zweitwagen" },
+    ],
+    icons: { pv: "mdi:solar-power-variant" },
+    colors: { pv: "#FFA800", grid_import: "#033C8C" },
+  });
+
+  const editor = document.createElement("power-flow-card-plus-mobile-editor");
+  document.getElementById("host").appendChild(editor);
+
+  let letzte = null, zaehler = 0;
+  editor.addEventListener("config-changed", (ev) => {
+    ev.stopPropagation();
+    zaehler++;
+    letzte = ev.detail.config;
+    document.getElementById("cfg").textContent = JSON.stringify(letzte, null, 1);
+    editor.setConfig(Object.freeze(JSON.parse(JSON.stringify(letzte))));
+  });
+
+  editor.hass = { states: {}, config: { version: "2026.8.2" } };
+  editor.setConfig(ECHT);
+
+  const menue = () => [...editor.querySelectorAll(".menue-zeile")];
+  const oeffne = async (id) => {
+    const b = menue().find(x => x.dataset.seite === id);
+    if (b) b.click();
+    await warte(40);
+  };
+  const zurueck = async () => {
+    const b = editor.querySelector(".zurueck");
+    if (b) b.click();
+    await warte(40);
+  };
+
+  (async () => {
+    await warte(250);
+
+    // --- 1. Anmeldung ---------------------------------------------------
+    const karte = customElements.get("power-flow-card-plus-mobile");
+    pruefe("Karte hat getConfigElement", typeof karte.getConfigElement === "function");
+    pruefe("liefert aufgewertetes Element", typeof karte.getConfigElement().setConfig === "function");
+    pruefe("getStubConfig ohne type", !("type" in (karte.getStubConfig({}, [], []) || {})));
+    pruefe("setConfig loest kein Ereignis aus", zaehler === 0, "Ereignisse: " + zaehler);
+
+    // --- 2. Hauptmenue --------------------------------------------------
+    const zeilen = menue();
+    pruefe("Hauptmenue hat 7 Einträge", zeilen.length === 7, zeilen.length + " gefunden");
+    const text = zeilen.map(z => z.textContent.replace(/\s+/g, " ").trim());
+    pruefe("Zusammenfassung Speicher", text.some(t => t.includes("2 von 2")), text.find(t => t.startsWith("Speicher")));
+    pruefe("Zusammenfassung Wallboxen", text.some(t => t.includes("3 von 4") && t.includes("2 mit Auto")),
+      text.find(t => t.startsWith("Wallboxen")));
+
+    // --- 3. Navigation --------------------------------------------------
+    await oeffne("pv");
+    pruefe("Unterseite hat Zurueck-Pfeil", !!editor.querySelector(".zurueck"));
+    pruefe("Unterseite zeigt nur ihre Felder",
+      [...editor.querySelectorAll("[data-n]")].map(x => x.dataset.n).join(",") === "pv,icon_pv,color_pv",
+      [...editor.querySelectorAll("[data-n]")].map(x => x.dataset.n).join(","));
+    await zurueck();
+    pruefe("Zurueck fuehrt ins Menue", menue().length === 7);
+
+    // --- 4. Hin und zurueck verlustfrei ---------------------------------
+    await oeffne("pv");
+    await bereit();
+    let ergebnis = null;
+    const horcher = (ev) => { ev.stopPropagation(); ergebnis = ev.detail.config; };
+    editor.addEventListener("config-changed", horcher, true);
+    const f = editor.querySelector("ha-form");
+    f.dispatchEvent(new CustomEvent("value-changed", { detail: { value: f.data }, bubbles: true, composed: true }));
+    editor.removeEventListener("config-changed", horcher, true);
+    const zurueckKonfig = ergebnis === null ? editor._config : ergebnis;
+    const gleich = JSON.stringify(zurueckKonfig) === JSON.stringify(ECHT);
+    pruefe("Konfiguration ueberlebt Hin- und Rueckwandlung", gleich);
+    if (!gleich) {
+      log.push("       erwartet: " + JSON.stringify(ECHT));
+      log.push("       bekommen: " + JSON.stringify(zurueckKonfig));
+      male();
+    }
+    await zurueck();
+
+    // --- 5. Netz-Umschalter ---------------------------------------------
+    await oeffne("grid");
+    await bereit();
+    const sel = editor.querySelector('select[data-n="grid_mode"]');
+    pruefe("Netz-Umschalter vorhanden", !!sel);
+    sel.value = "split";
+    sel.dispatchEvent(new Event("change", { bubbles: true }));
+    await warte(80);
+    const gf = [...editor.querySelectorAll("[data-n]")].map(x => x.dataset.n).filter(n => n.startsWith("grid"));
+    pruefe("Umschalten zeigt sofort beide Felder",
+      gf.includes("grid_consumption") && gf.includes("grid_production"), gf.join(","));
+    pruefe("Netz-Entitaet ueberlebt das Umschalten",
+      editor._config.grid === "sensor.zweirichtungszaehler", JSON.stringify(editor._config.grid));
+    await zurueck();
+
+    // --- 6. Wallboxen: hinzufuegen, Grenze, entfernen --------------------
+    await oeffne("wallboxes");
+    await bereit();
+    pruefe("Wallbox-Zeilen entsprechen Konfiguration",
+      editor.querySelectorAll(".zeile").length === 3, editor.querySelectorAll(".zeile").length + " Zeilen");
+    pruefe("Hinzufuegen offen bei 3", !editor.querySelector("button.add").disabled);
+    editor.querySelector("button.add").click();
+    await warte(80);
+    pruefe("Wallbox hinzugefuegt", editor._config.wallboxes.length === 4, "jetzt " + editor._config.wallboxes.length);
+    pruefe("type bleibt erhalten", letzte && letzte.type === "custom:power-flow-card-plus-mobile");
+    pruefe("Hinzufuegen gesperrt bei 4", editor.querySelector("button.add").disabled);
+    pruefe("neuer Eintrag ist aufgeklappt",
+      [...editor.querySelectorAll(".zeile")].slice(-1)[0].open);
+    [...editor.querySelectorAll("button.del")].slice(-1)[0].click();
+    await warte(80);
+    pruefe("Wallbox entfernt", editor._config.wallboxes.length === 3, "wieder " + editor._config.wallboxes.length);
+    await zurueck();
+
+    // --- 7. Batterie-Umschalter ------------------------------------------
+    await oeffne("batteries");
+    await bereit();
+    editor.querySelectorAll(".zeile").forEach(z => (z.open = true));
+    const bsel = editor.querySelector('select[data-n="power_mode"]');
+    pruefe("Batterie-Umschalter vorhanden", !!bsel);
+    bsel.value = "single";
+    bsel.dispatchEvent(new Event("change", { bubbles: true }));
+    await warte(90);
+    editor.querySelectorAll(".zeile").forEach(z => (z.open = true));
+    const bf = [...editor.querySelectorAll("[data-n]")].map(x => x.dataset.n);
+    pruefe("Umschalten wirkt sofort", bf.includes("power"),
+      bf.filter(n => /power|charge|discharge/.test(n)).join(","));
+    const b0 = editor._config.batteries[0];
+    pruefe("Entitaet bleibt beim Umschalten erhalten",
+      !!(b0.charge || b0.discharge || b0.power), JSON.stringify(b0));
+
+    // --- 8. Eingefrorene Konfiguration -----------------------------------
+    let geworfen = false;
+    try { editor.setConfig(ECHT); } catch (e) { geworfen = true; }
+    pruefe("eingefrorene Konfiguration nicht veraendert", !geworfen);
+
+    const fehler = log.filter(z => z.startsWith("  FEHL")).length;
+    log.push("");
+    log.push(fehler === 0 ? "  Alle Pruefungen bestanden." : "  " + fehler + " Pruefung(en) fehlgeschlagen.");
+    male();
+  })();
+})();
+</script>
+</body>
+</html>

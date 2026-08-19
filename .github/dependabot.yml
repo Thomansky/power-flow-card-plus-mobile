@@ -1,0 +1,10 @@
+# Die Karte selbst hat keine Abhängigkeiten – hier geht es allein um die
+# GitHub-Actions in den Workflows. Ein Pull Request im Monat, mehr nicht.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: ci

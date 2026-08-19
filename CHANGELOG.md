@@ -1,0 +1,174 @@
+# Änderungen
+
+Das Format folgt lose [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
+die Versionsnummern [Semantic Versioning](https://semver.org/lang/de/).
+
+## [Unveröffentlicht]
+
+## [1.5.1] – 2026-08-19
+
+### Behoben
+
+* **Mit `transparent: true` war auf hellem Dashboard nichts zu lesen.**
+  Überschrift, Gesamtwert und die drei Kacheln waren fest auf Weiß gesetzt,
+  die Kachelflächen auf ein weißes Transparent – auf hellem Grund also
+  unsichtbar. Alles außerhalb des Graphen folgt jetzt dem Thema
+  (`--primary-text-color`, `--secondary-text-color`, `--divider-color`).
+
+  Bringt die Karte ihren eigenen dunklen Grund mit (`transparent: false`,
+  die Vorgabe), bleibt es unverändert bei Weiß. Die Kugeln sind innen immer
+  dunkel, ihr weißer Text ist in beiden Fällen richtig.
+
+## [1.5.0] – 2026-08-19
+
+### Neu
+
+* **Autarkie und Eigenverbrauch als eigene Sensoren.** Wer `autarky` oder
+  `self_consumption` auf einen Prozentsensor zeigen lässt, bekommt dessen
+  Wert in der Kachel statt der Schätzung der Karte. Viele Anlagen – E3/DC
+  etwa – rechnen das selbst aus, und gemessen schlägt geschätzt. Im Editor
+  stehen die beiden Felder unter *Darstellung* bei den Kacheln.
+
+  Beides einzeln setzbar; was leer bleibt, rechnet die Karte weiter selbst.
+  Ist ein hinterlegter Sensor gerade nicht erreichbar, fällt die Kachel auf
+  die Rechnung zurück, statt leer zu bleiben. Werte außerhalb 0–100 % werden
+  gekappt.
+
+## [1.4.0] – 2026-08-19
+
+### Geändert
+
+* **Die mittlere Kugel zeigt jetzt den Durchsatz** statt des Hauszählers:
+  Erzeugung + Netzbezug + Speicherentladung, also alles, was am Verteilknoten
+  hineinfließt. Vorher stand dort der Hauszähler – eine ganz andere Größe als
+  die Erzeugung darüber, was den Vergleich der beiden Kugeln sinnlos machte.
+  Jetzt unterscheiden sie sich nur noch um das, was tatsächlich aus Netz und
+  Speicher dazukommt.
+
+  Bleibt eine Lücke zwischen der mittleren Kugel und der Summe der Abflüsse
+  darunter, ist das eine Aussage über die Anlage, nicht über die Karte:
+  Wandlungsverluste, Eigenverbrauch der Wechselrichter oder Sensoren, die
+  nicht im selben Moment aktualisieren.
+
+* **Die Autarkie rechnet unverändert mit dem Hauszähler**, nicht mit dem
+  Durchsatz – sonst zählten Einspeisung und Speicherladung als Verbrauch mit.
+
+* **Speicher werden einzeln verrechnet, nicht netto.** Entlädt einer, während
+  der andere lädt, sind das zwei getrennte Flüsse; netto verrechnet wäre der
+  kleinere spurlos verschwunden. Betrifft Durchsatz und Herkunftsring.
+
+## [1.3.1] – 2026-08-19
+
+### Behoben
+
+* **Beim Hinzufügen einer Quelle verschwand die erste.** Stand in der
+  Konfiguration noch die alte Schreibweise mit `pv` und `external`, legte der
+  Editor beim Hinzufügen eine frische `sources`-Liste an – und weil die
+  gegenüber `pv` gewinnt, war die erste Quelle plötzlich weg. Der Editor
+  übernimmt `pv` und `external` jetzt als vollwertige Listeneinträge, samt
+  ihrem Symbol und ihrer Farbe, und räumt die alte Schreibweise beim ersten
+  Speichern ab. Die Kurzfassung im Hauptmenü zählt sie ebenfalls mit.
+
+## [1.3.0] – 2026-08-19
+
+### Neu
+
+* **Bis zu vier Erzeugungsquellen** statt fest „Sonne" und „zweite Quelle".
+  Neue Liste `sources:`, im Editor unter *Erzeugung*, je Eintrag mit Name,
+  Symbol, Farbe und beliebig vielen Sensoren, die addiert werden. Die Reihe
+  oben rückt zusammen und wird kleiner, je mehr Quellen es sind.
+* **Zwei Speicherfarben**, wie beim Netz: `battery_charge` fürs Laden,
+  `battery_discharge` fürs Entladen. Ohne Angabe gilt weiter die eine Farbe.
+* **Herkunftsring am Auto.** Während geladen wird, zeigt ein zweiter, dünnerer
+  Ring innen dieselbe Aufteilung wie am Haus – der Ladestand bleibt außen.
+  Abschaltbar über `car_mix: false`.
+
+### Geändert
+
+* **Neue Vorgabefarben und -symbole**, übernommen aus einer laufenden Anlage:
+  Sonne gelb, zweite Quelle Akzentfarbe, Netzbezug blau, Einspeisung cyan,
+  Speicher rot; Symbole `mdi:solar-power`, `mdi:solar-power-variant`,
+  `mdi:transmission-tower`, `mdi:home-assistant`. Es sind Themenfarben, die
+  über `--<name>-color` aufgelöst werden – wer sein Thema umfärbt, färbt die
+  Karte mit. Der Ladestandsverlauf am Speicher ist damit nicht mehr die
+  Vorgabe; `battery: auto` holt ihn zurück.
+
+### Weiterhin gültig
+
+* `pv:` und `external:` werden gelesen und auf die ersten beiden Quellen
+  abgebildet, samt `icons.pv`, `icons.external`, `colors.pv`, `colors.external`.
+  Bestehende Karten müssen nichts ändern.
+
+## [1.2.0] – 2026-08-19
+
+### Neu
+
+* **Der Ring ums Haus zeigt die Herkunft.** Statt einer Farbe je ein Bogen für
+  Sonne, zweite Quelle, Speicher und Netzbezug, jeweils in deren eigener Farbe.
+  Die Anteile ergeben sich aus der momentanen Zufuhr – eine Aufteilung, keine
+  Messung. Ein ladender Speicher zählt nicht als Quelle. Abschaltbar über
+  `house_mix: false`.
+
+## [1.1.0] – 2026-08-19
+
+### Neu
+
+* **Geräte hinter dem Hauszähler.** Pro Speicher und pro Wallbox lässt sich
+  angeben, dass ihre Leistung im Hausverbrauch schon enthalten ist
+  (`included_in_house`, im Editor „Hängt hinter dem Hauszähler"). Die Karte
+  rechnet sie dann aus dem Hauswert heraus, statt sie zweimal zu zeigen.
+  Verteilknoten und Autarkie rechnen weiter mit dem Zählerwert.
+
+### Geändert
+
+* **Umbenannt** von „Powerflow Plus Mobile" zu **Power Flow Card Plus Mobile**.
+  Betrifft Dateiname, Kartentyp (`custom:power-flow-card-plus-mobile`) und
+  Repository. Wer die Vorgängerfassung installiert hatte, muss Ressource und
+  `type:` im Dashboard einmal anpassen.
+* **Farben stehen jetzt dort, wo die Geräte eingerichtet werden.** Speicher- und
+  Wallboxfarben sind von der Sammelseite „Darstellung → Weitere Farben" auf die
+  jeweilige Listenseite gewandert; die Sammelseite entfällt.
+* **Beschriftungen der Farbfelder vereinheitlicht** — sie heißen jetzt „Farbe
+  Sonne", „Farbe zweite Quelle" und so weiter, passend zu „Symbol Sonne".
+
+## [1.0.0] – 2026-08-18
+
+Erste Veröffentlichung.
+
+### Enthalten
+
+* Energiefluss als hoher, schmaler Graph, gebaut für Handybildschirme. Das
+  Seitenverhältnis passt sich dem vorhandenen Platz innerhalb eines Korridors
+  an, statt einen festen Rahmen zu erzwingen.
+* **Zwei Batteriespeicher** getrennt darstellbar, jeder mit eigenem Ladestand
+  und eigenem Symbol.
+* **Bis zu vier Wallboxen** einrichtbar. Gezeichnet werden immer nur die zwei
+  mit der höchsten Ladeleistung; lädt keine, bleibt der untere Bereich leer.
+* **Autos** erscheinen nur, solange die zugehörige Wallbox lädt.
+* **Getrennte Sensoren** für Netz und Speicher, wie sie E3/DC und andere
+  liefern: `consumption`/`production` beziehungsweise `charge`/`discharge`,
+  beide nie negativ. Ein einzelner Sensor mit Vorzeichen geht genauso.
+* Mehrere Leistungssensoren pro Wallbox werden addiert – nützlich, wenn eine
+  Box Netz- und Sonnenanteil getrennt meldet.
+* **Visueller Editor** mit Hauptmenü und Unterseiten, einklappbaren Einträgen
+  für Speicher und Wallboxen, freier Symbol- und Farbwahl.
+* Fehlende Werte werden als `–` gezeichnet, nie als `0`.
+* Eine Datei, kein Build-Schritt, keine Abhängigkeiten.
+
+### Bekannte Grenzen
+
+* Höchstens zwei Speicher und höchstens zwei gleichzeitig sichtbare Wallboxen.
+* Auf sehr breiten Bildschirmen bleibt seitlich Rand – die Anordnung ist für
+  hohe, schmale Flächen ausgelegt.
+* Reine Anzeige, es lässt sich nichts steuern.
+
+[Unveröffentlicht]: https://github.com/thomansky/power-flow-card-plus-mobile/compare/v1.5.1...HEAD
+[1.5.1]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.5.1
+[1.5.0]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.5.0
+[1.4.0]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.4.0
+[1.3.1]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.3.1
+[1.3.0]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.3.0
+[1.2.1]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.2.1
+[1.2.0]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.2.0
+[1.1.0]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.1.0
+[1.0.0]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.0.0

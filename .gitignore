@@ -1,0 +1,10 @@
+# Die eigene Dashboard-Konfiguration bleibt lokal. Sie steht voller echter
+# Entitäts-IDs und verrät damit mehr über die Anlage, als in ein öffentliches
+# Repository gehört. Wer ein Beispiel sucht, findet eines unter beispiele/.
+dein-dashboard.yaml
+
+.DS_Store
+Thumbs.db
+Desktop.ini
+node_modules/
+*.log
