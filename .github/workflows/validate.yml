@@ -19,7 +19,7 @@ jobs:
     name: JavaScript-Syntax
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       # Kein Build, kein Bundler – aber wenigstens soll die Datei parsen,
       # bevor sie irgendwo als Release landet.
@@ -30,7 +30,7 @@ jobs:
     name: HACS
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       # Der erfolgreiche Lauf dieses Jobs ist Pflichtnachweis, wenn die Karte
       # einmal in den HACS-Standardkatalog aufgenommen werden soll.
