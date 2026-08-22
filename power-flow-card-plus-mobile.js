@@ -8,7 +8,7 @@
  * https://github.com/thomansky/power-flow-card-plus-mobile
  */
 
-const PPM_VERSION = "1.6.0";
+const PPM_VERSION = "1.6.1";
 
 console.info(
   `%c POWER-FLOW-CARD-PLUS-MOBILE %c v${PPM_VERSION} `,
@@ -205,17 +205,41 @@ const QUELL_REIHE = [
    { x: 0.628, r: 0.088 }, { x: 0.885, r: 0.088 }],
 ];
 
-function buildNodes(nBat, spalten, autos, nQuellen) {
+/**
+ * Mindestluft zwischen zwei senkrecht verbundenen Knoten, als Anteil der
+ * Breite. Weniger ist keine Verbindung mehr, sondern eine Berührung.
+ */
+const LUFT = 0.045;
+
+function buildNodes(nBat, spalten, autos, nQuellen, aspect) {
+  const reihe = QUELL_REIHE[Math.min(4, nQuellen)] || [];
+  const ziele = QUELL_ZIEL[Math.min(4, nQuellen)] || [];
+
+  // Die Kreise hängen an der Breite, die Abstände an der Höhe. Auf einer
+  // breiten Fläche wachsen also die Kreise, während der Weg zwischen ihnen
+  // gleich bleibt – oben sitzt die Erzeugungsreihe dann auf dem Sammelknoten
+  // auf. Betroffen ist nur, wer senkrecht von oben ankommt: bei einer Quelle
+  // alle, bei dreien die mittlere. Für die rutschen die beiden Knotenreihen
+  // so weit herunter, dass Luft bleibt. Auf hohen Flächen ändert das nichts,
+  // dort ist der feste Wert ohnehin der größere.
+  const rQ = (reihe[0] || { r: 0.13 }).r;
+  const senkrecht = ziele.some(
+    (z, i) => z.ta === 270 && Math.abs(reihe[i].x - 0.5) < 0.01
+  );
+  const yGen = senkrecht
+    ? Math.max(0.268, 0.107 + (rQ + 0.074 + LUFT) * aspect)
+    : 0.268;
+  const yDist = Math.max(0.445, yGen + (0.074 + 0.074 + LUFT) * aspect);
+
   // Netz, Verteil-Knoten und Zuhause stehen auf einer Höhe – so wird daraus
   // eine durchgehende waagerechte Linie statt eines Versatzes.
   const N = {
-    busGen: { x: 0.5, y: 0.268, r: 0.074 },
-    grid: { x: 0.145, y: 0.445, r: 0.126 },
-    busDist: { x: 0.5, y: 0.445, r: 0.074 },
-    house: { x: LADE_MITTE, y: 0.445, r: 0.126 },
+    busGen: { x: 0.5, y: yGen, r: 0.074 },
+    grid: { x: 0.145, y: yDist, r: 0.126 },
+    busDist: { x: 0.5, y: yDist, r: 0.074 },
+    house: { x: LADE_MITTE, y: yDist, r: 0.126 },
   };
 
-  const reihe = QUELL_REIHE[Math.min(4, nQuellen)] || [];
   reihe.forEach((q, i) => {
     N["src" + (i + 1)] = { x: q.x, y: 0.107, r: q.r };
   });
@@ -231,9 +255,16 @@ function buildNodes(nBat, spalten, autos, nQuellen) {
   const x = (i) =>
     spalten === 1 ? LADE_MITTE : LADE_MITTE + (i === 0 ? -LADE_ABSTAND : LADE_ABSTAND);
 
+  // Unten dasselbe Spiel wie oben: das Auto hängt senkrecht unter seiner
+  // Wallbox, und auf einer breiten Fläche sitzen die beiden aufeinander.
+  // Das Auto kann nur bis an den unteren Rand, also rückt die Wallbox nach
+  // oben – dorthin, wo zum Verteilknoten ohnehin viel Luft ist.
+  const yCar = Math.min(0.905, 1 - (0.092 + 0.02) * aspect);
+  const yWb = Math.min(0.740, yCar - (0.092 + WB_RADIUS + LUFT) * aspect);
+
   for (let i = 0; i < spalten; i++) {
-    N["wb" + (i + 1)] = { x: x(i), y: 0.740, r: WB_RADIUS };
-    if (autos[i]) N["car" + (i + 1)] = { x: x(i), y: 0.905, r: 0.092 };
+    N["wb" + (i + 1)] = { x: x(i), y: autos.some(Boolean) ? yWb : 0.740, r: WB_RADIUS };
+    if (autos[i]) N["car" + (i + 1)] = { x: x(i), y: yCar, r: 0.092 };
   }
   return N;
 }
@@ -1083,14 +1114,15 @@ class PowerflowPlusMobileCard extends HTMLElement {
       .filter((w) => w.power != null && w.power > c.threshold)
       .sort((a, b) => b.power - a.power)
       .slice(0, 2);
+    const R = canvasRect(w, h);
     const N = buildNodes(
       c.batteries.length,
       aktiv.length,
       aktiv.map((w) => w.carSoc != null),
-      c.sources.length
+      c.sources.length,
+      R.w / R.h
     );
     const L = buildLinks(N, c.sources.length);
-    const R = canvasRect(w, h);
     const scale = R.w / 374;
 
     const P = (n) => ({ x: R.x + N[n].x * R.w, y: R.y + N[n].y * R.h });
@@ -1136,6 +1168,30 @@ class PowerflowPlusMobileCard extends HTMLElement {
       return `${d} L ${last.x} ${last.y}`;
     };
 
+    /**
+     * Länge desselben Weges. Die Ecken sind immer rechte Winkel, denn die
+     * Stützpunkte laufen nur waagerecht und senkrecht. Ein quadratischer
+     * Bogen über einen rechten Winkel misst 1,6231 · r – zwischen der Ecke
+     * (2 r) und dem Viertelkreis (1,5708 r), nachgerechnet über das Integral
+     * der Ableitung.
+     */
+    const pfadLaenge = (pts, radius) => {
+      if (pts.length < 2) return 0;
+      const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+      const lerp = (a, b, t) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+      let len = 0;
+      let von = pts[0];
+      for (let i = 1; i < pts.length - 1; i++) {
+        const p0 = pts[i - 1], p1 = pts[i], p2 = pts[i + 1];
+        const d1 = dist(p0, p1), d2 = dist(p1, p2);
+        if (d1 < 0.5 || d2 < 0.5) { len += dist(von, p1); von = p1; continue; }
+        const r = Math.min(radius, d1 / 2, d2 / 2);
+        len += dist(von, lerp(p1, p0, r / d1)) + 1.6231 * r;
+        von = lerp(p1, p2, r / d2);
+      }
+      return len + dist(von, pts[pts.length - 1]);
+    };
+
     // ---------------------------------------------------- Flusszustände
     const T = c.threshold;
     const states = {};
@@ -1164,9 +1220,22 @@ class PowerflowPlusMobileCard extends HTMLElement {
     L.forEach((link) => {
       const st = states[link.id];
       if (!st) return;
-      const dPath = roundedPath(waypoints(link), R.w * 0.045);
+      const pts = waypoints(link);
+      const dPath = roundedPath(pts, R.w * 0.045);
+      const laenge = pfadLaenge(pts, R.w * 0.045);
       const active = st.power > 0;
-      const lw = active ? Math.min(9, 1.6 + Math.sqrt(st.power / 1000) * 2.2) * scale : 1.6;
+      // Die Dicke sagt, wie viel fließt. Auf einem kurzen Weg darf sie das
+      // aber nicht dicker sagen als ein Viertel der Weglänge – sonst bleibt
+      // von der Verbindung nur ein Klecks zwischen zwei Kreisen übrig. Ein
+      // Viertel ist die Grenze, ab der zwei Punkte mit Lücke daraufpassen;
+      // schärfer gekappt würde eine starke Quelle dünner gezeichnet als eine
+      // schwache mit längerem Weg, und die Dicke löge.
+      const lw = active
+        ? Math.max(1.6, Math.min(
+            Math.min(9, 1.6 + Math.sqrt(st.power / 1000) * 2.2) * scale,
+            laenge / 4
+          ))
+        : 1.6;
 
       svg.appendChild(
         el("path", {
@@ -1179,8 +1248,17 @@ class PowerflowPlusMobileCard extends HTMLElement {
       );
       if (!active || !c.animate) return;
 
-      const dash = [lw * 0.7, lw * 2.6];
-      const period = dash[0] + dash[1];
+      // Punkte gleichmäßig verteilen: eine ganze Zahl von Perioden auf den
+      // Weg, mindestens zwei. Sonst steht auf kurzen Wegen ein einzelner
+      // fetter Punkt – oder zeitweise gar keiner, wenn die Periode länger
+      // ist als der Weg. Die runde Kappe verlängert jeden Punkt um lw, also
+      // muss die Lücke das überstehen: sie bleibt mindestens 0,6 · lw breit.
+      const period = laenge / Math.max(2, Math.round(laenge / (lw * 3.3)));
+      const dash = [
+        Math.max(0.05, Math.min(lw * 0.7, period - lw * 1.6)),
+        0,
+      ];
+      dash[1] = period - dash[0];
       const speed = Math.min(90, 26 + Math.sqrt(st.power / 1000) * 16) * scale;
       const p = el("path", {
         d: dPath, fill: "none", stroke: st.color,

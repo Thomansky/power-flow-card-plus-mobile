@@ -5,6 +5,33 @@ die Versionsnummern [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unveröffentlicht]
 
+## [1.6.1] – 2026-08-22
+
+### Behoben
+
+* **Kurze Verbindungen waren keine Verbindungen, sondern Kleckse.** Der
+  Punktabstand hing allein an der Linienstärke, nicht an der Weglänge. Auf
+  den drei kurzen Wegen – mittlere Quelle zum Sammelknoten, Sammelknoten zum
+  Verteilknoten, Verteilknoten zum Haus – war eine Punktperiode länger als
+  der ganze Weg: zu sehen war ein einzelner fetter Fleck, bei der mittleren
+  Quelle zeitweise gar nichts. Die Punkte sitzen jetzt in ganzen Perioden auf
+  dem Weg, mindestens zwei, mit einer Lücke, die die runde Kappe übersteht.
+
+  Dazu wird die Linienstärke auf ein Viertel der Weglänge gedeckelt. Genau
+  ein Viertel, nicht weniger: schärfer gekappt würde eine starke Quelle dünner
+  gezeichnet als eine schwache mit längerem Weg, und die Dicke löge.
+
+* **Auf breiten Flächen saßen die Kreise aufeinander.** Die Kreise hängen an
+  der Breite, die Abstände an der Höhe – wird die Fläche breit und flach,
+  wachsen also die Kreise, während der Weg zwischen ihnen gleich bleibt. Bei
+  einer einzigen Quelle blieben zwischen ihr und dem Sammelknoten **1,2
+  Pixel**; zwischen Wallbox und Auto rund zehn. Die betroffenen Knotenreihen
+  rutschen jetzt so weit, dass immer Luft bleibt: der Sammelknoten nach unten,
+  die Wallbox nach oben, wo zum Verteilknoten ohnehin Platz ist.
+
+  Auf hohen, schmalen Flächen – wofür die Karte gebaut ist – ändert sich
+  nichts: dort waren die festen Werte schon die größeren.
+
 ## [1.6.0] – 2026-08-20
 
 ### Neu
@@ -189,7 +216,8 @@ Erste Veröffentlichung.
   hohe, schmale Flächen ausgelegt.
 * Reine Anzeige, es lässt sich nichts steuern.
 
-[Unveröffentlicht]: https://github.com/thomansky/power-flow-card-plus-mobile/compare/v1.6.0...HEAD
+[Unveröffentlicht]: https://github.com/thomansky/power-flow-card-plus-mobile/compare/v1.6.1...HEAD
+[1.6.1]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.6.1
 [1.6.0]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.6.0
 [1.5.1]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.5.1
 [1.5.0]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.5.0
