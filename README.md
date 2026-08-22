@@ -193,6 +193,7 @@ colors:
 | `transparent` | `false` | Kartenhintergrund durchscheinen lassen. Text und Kacheln folgen dann dem Thema. |
 | `house_mix` | `true` | Ring ums Haus nach Herkunft des Stroms einfärben |
 | `car_mix` | `true` | Zweiter Ring im Auto nach Herkunft, solange geladen wird |
+| `autarky_mix` | `true` | Autarkie-Balken nach Herkunft färben statt einfarbig |
 | `min_height` | `460` | Wunschhöhe des Graphen in Pixeln |
 | `title` | `Energiefluss` | Überschrift |
 

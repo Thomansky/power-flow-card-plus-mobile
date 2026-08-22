@@ -8,7 +8,7 @@
  * https://github.com/thomansky/power-flow-card-plus-mobile
  */
 
-const PPM_VERSION = "1.5.1";
+const PPM_VERSION = "1.6.0";
 
 console.info(
   `%c POWER-FLOW-CARD-PLUS-MOBILE %c v${PPM_VERSION} `,
@@ -534,6 +534,8 @@ class PowerflowPlusMobileCard extends HTMLElement {
       house_mix: config.house_mix !== false,
       // Dasselbe am Auto: ein zweiter Ring innen, solange es laedt.
       car_mix: config.car_mix !== false,
+      // Autarkie-Balken nach Herkunft statt einfarbig.
+      autarky_mix: config.autarky_mix !== false,
       min_height: Number.isFinite(config.min_height) ? config.min_height : 460,
       colors: config.colors ?? null,
     };
@@ -906,8 +908,9 @@ class PowerflowPlusMobileCard extends HTMLElement {
           font-size: 17px; font-weight: 700; color: var(--ppm-text);
           margin: 1px 0 6px; font-variant-numeric: tabular-nums;
         }
-        .t-track { height: 4px; border-radius: 2px; background: var(--ppm-track); overflow: hidden; }
-        .t-fill { height: 100%; border-radius: 2px; transition: width .5s ease; }
+        .t-track { height: 4px; border-radius: 2px; background: var(--ppm-track);
+          overflow: hidden; display: flex; }
+        .t-fill { height: 100%; border-radius: 2px; transition: width .5s ease; flex: 0 0 auto; }
         .warn {
           flex: 0 0 auto;
           margin: 4px 12px 8px; padding: 9px 11px;
@@ -1013,6 +1016,31 @@ class PowerflowPlusMobileCard extends HTMLElement {
     const PAL = this._pal;
     const IC = c.icons || {};
     const v = this._readValues();
+
+    // Steht die Karte auf hellem Grund? Das entscheidet der Text des Themas:
+    // ist er dunkel, ist der Hintergrund hell. Zuverlaessiger als den
+    // Hintergrund selbst zu raten, den kann jedes Thema anders setzen.
+    const istHell = (() => {
+      if (!c.transparent) return false;   // eigener dunkler Grund
+      const s = cssVar("--primary-text-color", this, "#FFFFFF");
+      const m = s.match(/rgba?\((\d+)[,\s]+(\d+)[,\s]+(\d+)/);
+      const hex = s.match(/^#([0-9a-f]{6})$/i);
+      let r, gr, bl;
+      if (m) { r = +m[1]; gr = +m[2]; bl = +m[3]; }
+      else if (hex) {
+        r = parseInt(hex[1].slice(0, 2), 16);
+        gr = parseInt(hex[1].slice(2, 4), 16);
+        bl = parseInt(hex[1].slice(4, 6), 16);
+      } else return false;
+      return (r * 299 + gr * 587 + bl * 114) / 1000 < 128;
+    })();
+
+    // Innenleben der Kugeln. Auf hellem Grund waeren schwarze Scheiben mit
+    // weisser Schrift ein Fremdkoerper - beides dreht sich um.
+    const KUGEL = istHell ? "#F2F3F5" : (c.transparent ? "#0B0E13" : "#101318");
+    const SCHRIFT = istHell ? "#212121" : "#fff";
+    const SYMBOL = istHell ? "rgba(0,0,0,.78)" : "rgba(255,255,255,.92)";
+    const RINNE = istHell ? "rgba(0,0,0,.10)" : "rgba(255,255,255,.10)";
 
     // Farbe und Symbol je Erzeugungsquelle. Reihenfolge der Zuständigkeit:
     // was am Eintrag steht, dann die Liste unter colors/icons, dann – nur für
@@ -1205,12 +1233,12 @@ class PowerflowPlusMobileCard extends HTMLElement {
       const g = el("g", {});
       if (o.entity) g.setAttribute("class", "node-hit");
 
-      g.appendChild(el("circle", { cx: cc.x, cy: cc.y, r, fill: c.transparent ? "#0B0E13" : "#101318" }));
+      g.appendChild(el("circle", { cx: cc.x, cy: cc.y, r, fill: KUGEL }));
 
       if (o.ringSegments) {
         g.appendChild(el("circle", {
           cx: cc.x, cy: cc.y, r: r - d * 0.026, fill: "none",
-          stroke: "rgba(255,255,255,.10)", "stroke-width": d * 0.052,
+          stroke: RINNE, "stroke-width": d * 0.052,
         }));
         const total = o.ringSegments.reduce((a, b) => a + b.value, 0);
         if (total <= 0) {
@@ -1234,7 +1262,7 @@ class PowerflowPlusMobileCard extends HTMLElement {
         const lw = d * (o.thinRing ? 0.075 : 0.055);
         g.appendChild(el("circle", {
           cx: cc.x, cy: cc.y, r: r - lw / 2, fill: "none",
-          stroke: "rgba(255,255,255,.10)", "stroke-width": lw,
+          stroke: RINNE, "stroke-width": lw,
         }));
         if (o.ticks) {
           for (let i = 0; i < 40; i++) {
@@ -1284,13 +1312,13 @@ class PowerflowPlusMobileCard extends HTMLElement {
       }
 
       if (o.bus) {
-        textNode(g, cc.x, cc.y + d * 0.09, o.value, d * 0.24, 600, "#fff");
+        textNode(g, cc.x, cc.y + d * 0.09, o.value, d * 0.24, 600, SCHRIFT);
       } else {
         // Symbol und Text als ein Block, der als Ganzes mittig im Kreis sitzt.
         // Der Abstand hängt an der tatsächlichen Symbolgröße, nicht an einem
         // festen Wert – sonst klebt der Titel bei großen Symbolen daran.
         const symGroesse = d * (o.compact ? 0.19 : 0.22);
-        const eigenes = mdiIcon(o.mdi, 0, 0, symGroesse, "rgba(255,255,255,.92)");
+        const eigenes = mdiIcon(o.mdi, 0, 0, symGroesse, SYMBOL);
         const luft = d * 0.075;          // zwischen Symbol und Titel
         const hTitel = d * 0.108;
         const hWert = d * 0.145;
@@ -1308,13 +1336,13 @@ class PowerflowPlusMobileCard extends HTMLElement {
           eigenes.setAttribute("y", (symY - symGroesse / 2).toFixed(2));
           g.appendChild(eigenes);
         } else {
-          g.appendChild(icon(o.icon, cc.x, symY, symGroesse * 0.86, "rgba(255,255,255,.92)"));
+          g.appendChild(icon(o.icon, cc.x, symY, symGroesse * 0.86, SYMBOL));
         }
 
         let y = oben + symGroesse + luft + hTitel;
-        textNode(g, cc.x, y, o.title, hTitel, 500, "#fff", 0.72);
+        textNode(g, cc.x, y, o.title, hTitel, 500, SCHRIFT, 0.72);
         y += zeilenLuft + hWert;
-        textNode(g, cc.x, y, o.value, hWert, 600, "#fff");
+        textNode(g, cc.x, y, o.value, hWert, 600, SCHRIFT);
         if (o.detail) {
           y += zeilenLuft + hDetail;
           textNode(g, cc.x, y, o.detail, hDetail, 500, o.tint);
@@ -1327,7 +1355,7 @@ class PowerflowPlusMobileCard extends HTMLElement {
               cx: lx - d * 0.048, cy: y + d * 0.11, r: d * 0.021,
               fill: item.color, opacity: item.on ? 1 : 0.35,
             }));
-            const t = textNode(g, lx + d * 0.03, y + d * 0.145, item.label, d * 0.068, 500, "#fff",
+            const t = textNode(g, lx + d * 0.03, y + d * 0.145, item.label, d * 0.068, 500, SCHRIFT,
               item.on ? 0.9 : 0.4);
             t.setAttribute("text-anchor", "start");
             lx += step;
@@ -1416,17 +1444,47 @@ class PowerflowPlusMobileCard extends HTMLElement {
     this.shadowRoot.querySelector("#total").textContent = fmtPower(v.production);
 
     if (c.show_tiles) {
+      // Der Autarkie-Balken zeigt, woher der Strom kam, der nicht aus dem Netz
+      // stammt: je Quelle ein Stück in ihrer Farbe. Autarkie ist ja gerade der
+      // Anteil ohne Netzbezug – der gefüllte Teil lässt sich also genau nach
+      // den übrigen Quellen aufteilen.
+      //
+      // Kommt die Autarkie aus einem eigenen Sensor, passen Messwert und
+      // Mischung nicht exakt zusammen. Dann werden die Anteile auf die
+      // gemessene Länge gestreckt: die Zahl bleibt die gemessene, die Farben
+      // zeigen weiterhin das Verhältnis.
+      const ohneNetz = c.autarky_mix && mischung
+        ? mischung.filter((s) => s.color !== mixFarbe.grid)
+        : null;
+      const autarkieStuecke = ohneNetz && ohneNetz.length
+        ? (() => {
+            const summe = ohneNetz.reduce((a, s) => a + s.value, 0);
+            if (!summe) return null;
+            const voll = Math.min(1, Math.max(0, v.autarky ?? 0));
+            return ohneNetz.map((s) => ({ f: (s.value / summe) * voll, color: s.color }));
+          })()
+        : null;
+
       const tiles = [
-        { label: "Autarkie", value: fmtPct(v.autarky), f: v.autarky ?? 0, color: PAL.house },
+        { label: "Autarkie", value: fmtPct(v.autarky), f: v.autarky ?? 0, color: PAL.house,
+          stuecke: autarkieStuecke },
         { label: "Eigenverbrauch", value: fmtPct(v.selfConsumption), f: v.selfConsumption ?? 0, color: PAL.pv },
         { label: "Speicher", value: fmtSoc(v.batterySoc), f: (v.batterySoc ?? 0) / 100, color: this._batColor(v.batterySoc) },
       ];
+      const balken = (t) =>
+        t.stuecke
+          ? t.stuecke
+              .map((s) =>
+                `<div class="t-fill" style="width:${(Math.min(1, Math.max(0, s.f)) * 100).toFixed(1)}%;` +
+                `background:${s.color};box-shadow:0 0 5px ${s.color}"></div>`)
+              .join("")
+          : `<div class="t-fill" style="width:${(Math.min(1, Math.max(0, t.f)) * 100).toFixed(1)}%;` +
+            `background:${t.color};box-shadow:0 0 5px ${t.color}"></div>`;
       this.shadowRoot.querySelector("#tiles").innerHTML = tiles
         .map((t) =>
           `<div class="tile"><div class="t-label">${t.label}</div>` +
           `<div class="t-value">${t.value}</div>` +
-          `<div class="t-track"><div class="t-fill" style="width:${(Math.min(1, Math.max(0, t.f)) * 100).toFixed(1)}%;` +
-          `background:${t.color};box-shadow:0 0 5px ${t.color}"></div></div></div>`
+          `<div class="t-track">${balken(t)}</div></div>`
         )
         .join("");
     }
@@ -1493,6 +1551,7 @@ const LABELS = {
   animate: "Fluss animieren",
   house_mix: "Hauskreis nach Herkunft färben",
   car_mix: "Autokreis nach Herkunft färben",
+  autarky_mix: "Autarkie-Balken nach Herkunft färben",
   show_tiles: "Kacheln unten zeigen",
   transparent: "Durchsichtiger Hintergrund",
 };
@@ -1603,6 +1662,7 @@ function toForm(cfg) {
     animate: c.animate !== false,
     house_mix: c.house_mix !== false,
     car_mix: c.car_mix !== false,
+    autarky_mix: c.autarky_mix !== false,
     show_tiles: c.show_tiles !== false,
     transparent: !!c.transparent,
   };
@@ -1668,6 +1728,7 @@ function fromForm(d, cfg) {
   neu.animate = d.animate === false ? false : undefined;
   neu.house_mix = d.house_mix === false ? false : undefined;
   neu.car_mix = d.car_mix === false ? false : undefined;
+  neu.autarky_mix = d.autarky_mix === false ? false : undefined;
   neu.show_tiles = d.show_tiles === false ? false : undefined;
   neu.transparent = d.transparent ? true : undefined;
   return neu;
@@ -1738,6 +1799,7 @@ const SEITEN_SCHEMA = {
     { name: "animate", selector: { boolean: {} } },
     { name: "house_mix", selector: { boolean: {} } },
     { name: "car_mix", selector: { boolean: {} } },
+    { name: "autarky_mix", selector: { boolean: {} } },
     { name: "show_tiles", selector: { boolean: {} } },
     { name: "autarky", selector: SEL_ENTITY },
     { name: "self_consumption", selector: SEL_ENTITY },

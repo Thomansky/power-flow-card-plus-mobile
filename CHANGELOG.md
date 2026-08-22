@@ -5,6 +5,33 @@ die Versionsnummern [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unveröffentlicht]
 
+## [1.6.0] – 2026-08-20
+
+### Neu
+
+* **Der Autarkie-Balken zeigt die Herkunft.** Statt einer Farbe je Quelle ein
+  Stück in ihrer Farbe. Autarkie ist der Anteil ohne Netzbezug – der gefüllte
+  Teil des Balkens lässt sich also genau nach den übrigen Quellen aufteilen,
+  Netz kommt darin folgerichtig nicht vor. Abschaltbar über
+  `autarky_mix: false`.
+
+  Kommt die Autarkie aus einem eigenen Sensor, werden die Anteile auf die
+  gemessene Länge gestreckt: die Zahl bleibt die gemessene, die Farben zeigen
+  weiterhin das Verhältnis.
+
+### Behoben
+
+* **Auf hellem Dashboard blieben die Kugeln schwarz.** In 1.5.1 hatte ich nur
+  die Kartenhülle ans Thema gehängt, den Graphen selbst nicht – schwarze
+  Scheiben mit weißer Schrift auf weißem Grund. Jetzt drehen sich Füllung,
+  Schrift, Symbole und Ringrinne mit: auf hellem Grund helle Kugeln mit
+  dunkler Schrift.
+
+  Erkannt wird das an der Textfarbe des Themas: ist sie dunkel, ist der
+  Hintergrund hell. Das ist zuverlässiger, als den Hintergrund zu raten, den
+  jedes Thema anders setzen kann. Bringt die Karte ihren eigenen dunklen Grund
+  mit (`transparent: false`), bleibt alles dunkel – unabhängig vom Thema.
+
 ## [1.5.1] – 2026-08-19
 
 ### Behoben
@@ -162,7 +189,8 @@ Erste Veröffentlichung.
   hohe, schmale Flächen ausgelegt.
 * Reine Anzeige, es lässt sich nichts steuern.
 
-[Unveröffentlicht]: https://github.com/thomansky/power-flow-card-plus-mobile/compare/v1.5.1...HEAD
+[Unveröffentlicht]: https://github.com/thomansky/power-flow-card-plus-mobile/compare/v1.6.0...HEAD
+[1.6.0]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.6.0
 [1.5.1]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.5.1
 [1.5.0]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.5.0
 [1.4.0]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.4.0
