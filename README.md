@@ -25,7 +25,7 @@ Eine Datei, kein Build-Schritt, keine Abhängigkeiten.
 
 ## Wie es aussieht
 
-<img src="docs/images/karte-handy.jpg" alt="Die Karte auf einem Handybildschirm" width="420">
+<img src="https://raw.githubusercontent.com/Thomansky/power-flow-card-plus-mobile/main/docs/images/karte-handy.jpg" alt="Die Karte auf einem Handybildschirm" width="420">
 
 Ein hoher, schmaler Graph, der die Bildschirmhöhe ausnutzt statt sie zu
 verschenken. Die Linien sind so dick wie der Fluss stark ist und laufen in
