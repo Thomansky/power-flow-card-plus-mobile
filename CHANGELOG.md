@@ -5,6 +5,45 @@ die Versionsnummern [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unveröffentlicht]
 
+## [1.7.0] – 2026-08-27
+
+### Neu
+
+* **Die Karte findet selbst heraus, welches Auto an welcher Wallbox hängt.**
+  Bisher stand das fest in der Konfiguration – bei zwei Wallboxen und zwei
+  Autos, die mal so und mal so eingesteckt werden, war es falsch, sobald
+  jemand tauschte. Neu ist `car_match` mit zwei Wegen:
+
+  * `plug` – wer zusammen eingesteckt wurde, gehört zusammen. Verglichen wird,
+    wann sich der Steckerzustand an Wallbox und Auto zuletzt geändert hat.
+    Spielraum über `car_match_window`, Vorgabe fünf Minuten, weil ein Auto
+    seinen Zustand schon mal verspätet aus der Cloud holt.
+  * `power` – verglichen wird, was die Wallbox abgibt und das Auto aufnimmt.
+    Spielraum über `car_match_tolerance`, Vorgabe 25 %, denn die Wallbox misst
+    am Kabel und das Auto hinter dem Laderegler.
+
+  Vorgabe ist `off`: ohne die Einstellung ändert sich nichts.
+
+  Entschieden wird **einmal**, danach steht es. Sonst springt die Zuordnung
+  mitten im Laden um, sobald ein zweites Auto zufällig ähnlich viel zieht.
+  Gelöst wird erst, wenn das Kabel gezogen ist; ohne Steckersensor, wenn nichts
+  mehr fließt. Passt nichts in den Spielraum, bleibt der Autokreis leer – lieber
+  kein Auto als das falsche. Gesucht wird die beste Gesamtaufteilung, nicht das
+  beste Einzelpaar: sonst nimmt die sicherste Paarung ein Auto weg, das anderswo
+  das einzig mögliche war.
+
+* **Autos sind jetzt eine eigene Seite im Editor**, mit Ladestand, Name, Symbol,
+  Steckerzustand und Ladeleistung; bis zu vier. Darunter steht, wie zugeordnet
+  wird.
+* **Wallboxen haben ein Feld für den Steckerzustand** (`plug`).
+
+### Weiterhin gültig
+
+* `car:` an der Wallbox schlägt die selbsttätige Suche. Das dort genannte Auto
+  ist für die Suche gesperrt und steht nicht plötzlich an zwei Kreisen.
+* Ohne `car_match` wird die Autoliste wie bisher der Reihe nach den Wallboxen
+  zugeteilt. Bestehende Karten müssen nichts ändern.
+
 ## [1.6.1] – 2026-08-22
 
 ### Behoben
@@ -216,7 +255,8 @@ Erste Veröffentlichung.
   hohe, schmale Flächen ausgelegt.
 * Reine Anzeige, es lässt sich nichts steuern.
 
-[Unveröffentlicht]: https://github.com/thomansky/power-flow-card-plus-mobile/compare/v1.6.1...HEAD
+[Unveröffentlicht]: https://github.com/thomansky/power-flow-card-plus-mobile/compare/v1.7.0-beta.1...HEAD
+[1.7.0]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.7.0-beta.1
 [1.6.1]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.6.1
 [1.6.0]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.6.0
 [1.5.1]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.5.1

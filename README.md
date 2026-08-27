@@ -182,7 +182,11 @@ colors:
 | `autarky` | – | Optional: eigener Sensor in % statt der Rechnung |
 | `self_consumption` | – | Optional: eigener Sensor in % statt der Rechnung |
 | `batteries` | `[]` | Höchstens zwei. Je `power` **oder** `charge`+`discharge`, dazu `soc`, `name`, `icon`, `included_in_house`. |
-| `wallboxes` | `[]` | Höchstens vier. Je `power` (auch Liste), `name`, `icon`, `included_in_house`, `car`, `car_name`, `car_icon`. |
+| `wallboxes` | `[]` | Höchstens vier. Je `power` (auch Liste), `name`, `icon`, `included_in_house`, `plug`, `car`, `car_name`, `car_icon`. |
+| `cars` | `[]` | Höchstens vier. Je `soc`, `name`, `icon`, `plug`, `power`. |
+| `car_match` | `off` | Auto selbst zuordnen: `off`, `plug` oder `power`. Siehe unten. |
+| `car_match_window` | `300` | Nur bei `plug`: wie weit die Steckerzeitpunkte auseinanderliegen dürfen (s) |
+| `car_match_tolerance` | `0.25` | Nur bei `power`: wie stark die Leistungen abweichen dürfen (Anteil) |
 | `icons` | – | Symbole für `pv`, `external`, `grid`, `house` |
 | `colors` | – | Farben je Knoten, siehe unten |
 | `invert_grid` | `false` | Umschalten, wenn Deine Integration Bezug negativ meldet |
@@ -260,6 +264,84 @@ Messwert aussähe.
 
 Abschalten lässt sich das mit `house_mix: false` oder im Editor unter
 *Darstellung → Hauskreis nach Herkunft färben*.
+
+---
+
+## Welches Auto hängt an welcher Wallbox?
+
+Normalerweise steht das fest in der Konfiguration: `car:` an der Wallbox zeigt
+auf den Ladestand des Autos, das dort hängt. Bei zwei Wallboxen und zwei Autos,
+die mal so und mal so eingesteckt werden, ist das falsch, sobald jemand tauscht.
+
+Deshalb kann die Karte die Zuordnung selbst suchen. Dazu die Autos einmal als
+eigene Liste anlegen und `car_match` setzen. **Von Hand eingetragen schlägt
+immer selbst gefunden** – wo ein `car:` steht, wird nicht gesucht, und das dort
+genannte Auto ist für die Suche gesperrt.
+
+### Über den Ladestecker
+
+Wer zusammen eingesteckt wurde, gehört zusammen. Die Karte vergleicht, wann
+sich der Steckerzustand an der Wallbox und der am Auto zuletzt geändert hat.
+
+```yaml
+car_match: plug
+wallboxes:
+  - power: sensor.wallbox_1_leistung
+    name: Garage
+    plug: binary_sensor.wallbox_1_kabel
+  - power: sensor.wallbox_2_leistung
+    name: Hof
+    plug: binary_sensor.wallbox_2_kabel
+cars:
+  - soc: sensor.auto_a_ladestand
+    name: Kombi
+    plug: binary_sensor.auto_a_eingesteckt
+  - soc: sensor.auto_b_ladestand
+    name: Kleiner
+    plug: binary_sensor.auto_b_eingesteckt
+```
+
+Der Steckersensor darf alles sein, was `on`/`off`, `true`/`false`,
+`connected`/`disconnected`, `plugged`/`unplugged` oder ähnlich meldet. Was in
+keines der beiden Lager fällt, gilt als *keine Aussage* – nicht als „nein".
+
+Sensoren melden nicht im selben Augenblick; ein Auto, das seinen Zustand aus der
+Cloud holt, hinkt schon mal Minuten hinterher. Der Spielraum liegt deshalb bei
+fünf Minuten und lässt sich über `car_match_window` weiten.
+
+### Über die Ladeleistung
+
+Verglichen wird, was die Wallbox abgibt und was das Auto aufnimmt.
+
+```yaml
+car_match: power
+wallboxes:
+  - power: sensor.wallbox_1_leistung
+    name: Garage
+cars:
+  - soc: sensor.auto_a_ladestand
+    name: Kombi
+    power: sensor.auto_a_ladeleistung
+```
+
+Beide Seiten müssen dieselbe Größe messen – zwei Leistungen oder zwei Ströme,
+nicht eins von jedem. W, kW und MW rechnet die Karte um, Ampere gegen Watt geht
+nicht auf. Die Wallbox misst am Kabel, das Auto hinter dem Laderegler; ein Rest
+Unterschied bleibt immer, deshalb sind 25 % Abweichung erlaubt
+(`car_match_tolerance`).
+
+### Was dabei gilt
+
+* **Entschieden wird einmal.** Steht die Zuordnung, bleibt sie – sonst springt
+  sie mitten im Laden um, sobald ein zweites Auto zufällig ähnlich viel zieht.
+  Gelöst wird erst, wenn das Kabel gezogen ist; ohne Steckersensor, wenn nichts
+  mehr fließt.
+* **Lieber kein Auto als das falsche.** Passt nichts innerhalb des Spielraums,
+  bleibt der Autokreis leer.
+* **Gesucht wird die beste Gesamtaufteilung**, nicht das beste Einzelpaar. Sonst
+  nimmt die sicherste Paarung ein Auto weg, das anderswo das einzig mögliche war.
+* Ohne `car_match` ändert sich nichts: die Autoliste wird dann wie bisher der
+  Reihe nach den Wallboxen zugeteilt.
 
 ---
 

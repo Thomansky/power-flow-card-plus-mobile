@@ -8,7 +8,7 @@
  * https://github.com/thomansky/power-flow-card-plus-mobile
  */
 
-const PPM_VERSION = "1.6.1";
+const PPM_VERSION = "1.7.0";
 
 console.info(
   `%c POWER-FLOW-CARD-PLUS-MOBILE %c v${PPM_VERSION} `,
@@ -540,17 +540,37 @@ class PowerflowPlusMobileCard extends HTMLElement {
           icon: o.icon ?? null,
           // Hängt hinter dem Hauszähler und steckt in dessen Messwert schon drin.
           in_house: !!o.included_in_house,
-          // Das Auto, das an dieser Wallbox hängt.
+          // Zustand des Ladesteckers. Nur für die selbsttätige Zuordnung.
+          plug: o.plug ?? null,
+          // Das Auto, das an dieser Wallbox hängt. Steht hier eins, gilt es –
+          // von Hand eingetragen schlägt selbst gefunden.
           car: o.car ?? null,
           car_name: o.car_name ?? null,
           car_icon: o.car_icon ?? null,
         };
       }),
-      // Ältere Schreibweise: eigene Liste, die der Reihe nach zugeordnet wird.
+      // Die Autos des Haushalts. Ohne selbsttätige Zuordnung werden sie der
+      // Reihe nach den Wallboxen zugeteilt – so war es immer schon.
       cars: list(config.cars).map((c, i) => {
         const o = norm(c, ["soc"]);
-        return { soc: o.soc ?? null, name: o.name ?? `Auto ${i + 1}`, icon: o.icon ?? null };
+        return {
+          soc: o.soc ?? null,
+          name: o.name ?? `Auto ${i + 1}`,
+          icon: o.icon ?? null,
+          // Beides nur für die selbsttätige Zuordnung.
+          plug: o.plug ?? null,
+          power: o.power ?? null,
+        };
       }),
+      // Wie die Karte herausfindet, welches Auto an welcher Wallbox hängt:
+      // gar nicht ("off"), über die beiden Steckerzustände ("plug") oder
+      // über den Abgleich der Ladeleistung ("power").
+      car_match: ["plug", "power"].includes(config.car_match) ? config.car_match : "off",
+      // Wie weit die beiden Steckerzeitpunkte auseinanderliegen dürfen.
+      car_match_window: Number.isFinite(config.car_match_window) ? config.car_match_window : 300,
+      // Wie stark die beiden Leistungen abweichen dürfen, als Anteil.
+      car_match_tolerance:
+        Number.isFinite(config.car_match_tolerance) ? config.car_match_tolerance : 0.25,
       icons: config.icons ?? null,
       // Vorzeichen: je nach Integration unterschiedlich. Voreinstellung ist
       // "Netzbezug positiv" und "Batterie laden positiv".
@@ -589,17 +609,17 @@ class PowerflowPlusMobileCard extends HTMLElement {
     if (this._config.batteries.length > 2) {
       throw new Error("Es werden höchstens zwei Batteriespeicher dargestellt.");
     }
-    if (this._config.cars.length > 2) {
-      throw new Error("Die getrennte Autoliste fasst höchstens zwei Einträge. " +
-        "Mehr Autos gehören direkt an ihre Wallbox.");
+    if (this._config.cars.length > 4) {
+      throw new Error("Es lassen sich höchstens vier Autos einrichten.");
     }
     if (this._config.wallboxes.length > 4) {
       throw new Error("Es lassen sich höchstens vier Wallboxen einrichten.");
     }
 
-    // Autos aus der alten getrennten Liste der Reihe nach den Wallboxen
-    // zuordnen, sofern dort keins eingetragen ist.
-    this._config.wallboxes.forEach((w, i) => {
+    // Autos der Reihe nach den Wallboxen zuordnen, sofern dort keins
+    // eingetragen ist. Sucht die Karte sich die Zuordnung selbst, unterbleibt
+    // das – sonst stünde die feste Reihenfolge der Suche im Weg.
+    if (this._config.car_match === "off") this._config.wallboxes.forEach((w, i) => {
       const alt = this._config.cars[i];
       if (!w.car && alt && alt.soc) {
         w.car = alt.soc;
@@ -618,9 +638,13 @@ class PowerflowPlusMobileCard extends HTMLElement {
       .concat(ausBip(c.grid))
       .concat(c.batteries.flatMap((b) => ausBip(b.power).concat([b.soc])))
       .concat(c.wallboxes.flatMap((w) =>
-        (Array.isArray(w.power) ? w.power : [w.power]).concat([w.car])))
-      .concat(c.cars.map((x) => x.soc))
+        (Array.isArray(w.power) ? w.power : [w.power]).concat([w.car, w.plug])))
+      .concat(c.cars.flatMap((x) => [x.soc, x.plug, x.power]))
       .filter(Boolean);
+
+    // Gefundene Paare gelten nur für die Konfiguration, unter der sie
+    // entstanden sind.
+    this._paare = {};
 
     this._buildShell();
     this._scheduleRender();
@@ -665,6 +689,134 @@ class PowerflowPlusMobileCard extends HTMLElement {
   }
 
   // ------------------------------------------------------------ Zustände
+
+  /**
+   * Welches Auto hängt an welcher Wallbox?
+   *
+   * Von Hand eingetragene Zuordnungen gelten immer, die rührt das hier nicht
+   * an. Für den Rest gibt es zwei Wege: die beiden Steckerzustände – wer
+   * zusammen eingesteckt wurde, gehört zusammen – oder der Abgleich der
+   * Ladeleistung.
+   *
+   * Entschieden wird einmal, danach steht es. Sonst springt die Zuordnung
+   * mitten im Laden um, sobald ein zweites Auto zufällig ähnlich viel zieht.
+   * Gelöst wird erst, wenn das Kabel gezogen ist; ohne Steckersensor, wenn
+   * nichts mehr fließt.
+   *
+   * @returns {Object} Wallbox-Nummer → Auto-Nummer
+   */
+  _ordneAutosZu(c) {
+    if (!this._paare) this._paare = {};
+    if (c.car_match === "off" || !c.cars.length) {
+      this._paare = {};
+      return this._paare;
+    }
+
+    const T = c.threshold;
+
+    // Steckt das Kabel? Die Integrationen sind sich über die Schreibweise
+    // nicht einig, deshalb beide Lager sammeln. Was in keines fällt, ist
+    // keine Aussage – und wird als solche behandelt, nicht als "nein".
+    const steckt = (id) => {
+      const st = id && this._hass && this._hass.states[id];
+      if (!st) return null;
+      const w = String(st.state).trim().toLowerCase();
+      if (["on", "true", "connected", "plugged", "plugged_in", "locked",
+           "charging", "ready", "cable_connected"].includes(w)) return true;
+      if (["off", "false", "disconnected", "unplugged", "not_connected",
+           "none", "free", "no_cable"].includes(w)) return false;
+      return null;
+    };
+
+    // Wann hat sich dieser Zustand zuletzt geändert? Das ist der Zeitpunkt
+    // des Einsteckens. Verglichen werden nur zwei solche Zeitpunkte
+    // miteinander, nie einer mit der Uhr – so bleibt es prüfbar.
+    const seit = (id) => {
+      const st = id && this._hass && this._hass.states[id];
+      const t = st && (st.last_changed || st.last_updated);
+      const ms = t ? Date.parse(t) : NaN;
+      return Number.isFinite(ms) ? ms : null;
+    };
+
+    const laedt = (w) => (this._sum(w.power) ?? 0) > T;
+
+    // Bestehende Paare lösen, die nicht mehr gelten.
+    for (const schluessel of Object.keys(this._paare)) {
+      const w = c.wallboxes[Number(schluessel)];
+      if (!w || w.car) { delete this._paare[schluessel]; continue; }
+      const st = steckt(w.plug);
+      if (st === false || (st == null && !laedt(w))) delete this._paare[schluessel];
+    }
+
+    // Schon vergebene Autos sind für die Suche gesperrt – auch die, die von
+    // Hand an einer Wallbox stehen. Ohne das stünde dasselbe Auto an zwei
+    // Kreisen gleichzeitig.
+    const belegt = new Set(Object.values(this._paare));
+    const vonHand = new Set(c.wallboxes.map((w) => w.car).filter(Boolean));
+    const freieAutos = c.cars
+      .map((x, i) => ({ ...x, i }))
+      .filter((x) => !belegt.has(x.i) && !vonHand.has(x.soc));
+    const offene = c.wallboxes
+      .map((w, i) => ({ ...w, i }))
+      .filter((w) => !w.car && this._paare[w.i] === undefined)
+      .filter((w) => steckt(w.plug) === true || laedt(w));
+    if (!offene.length || !freieAutos.length) return this._paare;
+
+    // Beide Wege liefern eine Note: je kleiner, desto sicherer. Wer die
+    // Schwelle reißt, kommt gar nicht erst in die Auswahl – lieber kein
+    // Auto zeigen als das falsche.
+    const nachStecker = (w, a) => {
+      if (steckt(w.plug) !== true || steckt(a.plug) !== true) return null;
+      const tw = seit(w.plug), ta = seit(a.plug);
+      if (tw == null || ta == null) return null;
+      const abstand = Math.abs(tw - ta) / 1000;
+      return abstand <= c.car_match_window ? abstand : null;
+    };
+    const nachLeistung = (w, a) => {
+      const pw = this._sum(w.power);
+      const pa = this._num(a.power);
+      if (pw == null || pa == null || pw <= T) return null;
+      const abweichung = Math.abs(pw - pa) / Math.max(Math.abs(pw), 1);
+      return abweichung <= c.car_match_tolerance ? abweichung : null;
+    };
+    const note = c.car_match === "plug" ? nachStecker : nachLeistung;
+
+    // Alle zulässigen Paarungen mit ihrer Note.
+    const moeglich = offene.map((w) =>
+      freieAutos
+        .map((a) => ({ auto: a.i, note: note(w, a) }))
+        .filter((x) => x.note != null)
+    );
+
+    // Gesucht ist die beste Gesamtaufteilung, nicht das beste Einzelpaar.
+    // Gierig zu nehmen wäre einfacher, ließe aber Autos stehen: das sicherste
+    // Paar kann ein Auto wegnehmen, das anderswo das einzig mögliche war.
+    // Zuerst zählt, wie viele Autos überhaupt zugeordnet werden, dann die
+    // Summe der Noten. Bei höchstens vier auf jeder Seite ist das billig.
+    let bestZahl = -1, bestSumme = Infinity, bestWahl = null;
+    const suche = (k, benutzt, wahl, zahl, summe) => {
+      if (k === offene.length) {
+        if (zahl > bestZahl || (zahl === bestZahl && summe < bestSumme - 1e-9)) {
+          bestZahl = zahl; bestSumme = summe; bestWahl = wahl.slice();
+        }
+        return;
+      }
+      for (const x of moeglich[k]) {
+        if (benutzt.has(x.auto)) continue;
+        benutzt.add(x.auto);
+        wahl.push({ wb: offene[k].i, auto: x.auto });
+        suche(k + 1, benutzt, wahl, zahl + 1, summe + x.note);
+        wahl.pop();
+        benutzt.delete(x.auto);
+      }
+      // Diese Wallbox kann auch leer bleiben.
+      suche(k + 1, benutzt, wahl, zahl, summe);
+    };
+    suche(0, new Set(belegt), [], 0, 0);
+
+    for (const p of bestWahl || []) this._paare[p.wb] = p.auto;
+    return this._paare;
+  }
 
   /** Liest eine Entität als Zahl in Watt. Rechnet kW und MW um. */
   _num(entityId) {
@@ -747,16 +899,24 @@ class PowerflowPlusMobileCard extends HTMLElement {
       soc: this._pctVal(b.soc),
       name: b.name,
     }));
-    const wallboxes = c.wallboxes.map((w, i) => ({
-      index: i,
-      power: this._sum(w.power),
-      name: w.name,
-      icon: w.icon,
-      carSoc: this._pctVal(w.car),
-      carName: w.car_name || "Auto",
-      carIcon: w.car_icon,
-      hatAuto: !!w.car,
-    }));
+    const paare = this._ordneAutosZu(c);
+    const wallboxes = c.wallboxes.map((w, i) => {
+      // Von Hand eingetragen schlägt selbst gefunden.
+      const auto = w.car ? null : c.cars[paare[i]];
+      const soc = w.car || (auto ? auto.soc : null);
+      return {
+        index: i,
+        power: this._sum(w.power),
+        name: w.name,
+        icon: w.icon,
+        carSoc: this._pctVal(soc),
+        carName: (w.car ? w.car_name : auto && auto.name) || "Auto",
+        carIcon: (w.car ? w.car_icon : auto && auto.icon) || null,
+        // Worauf ein Tipp auf den Autokreis zeigt.
+        carRef: soc,
+        hatAuto: !!soc,
+      };
+    });
     const cars = c.cars.map((x) => ({ soc: this._pctVal(x.soc), name: x.name }));
 
     const production = sources.reduce((a, q) => a + Math.max(0, z(q.power)), 0);
@@ -1510,7 +1670,7 @@ class PowerflowPlusMobileCard extends HTMLElement {
         drawNode(`car${i + 1}`, {
           icon: "car", mdi: w.carIcon, title: w.carName, value: fmtSoc(w.carSoc),
           soc: w.carSoc, thinRing: true, tint: PAL.car[i % PAL.car.length],
-          active: true, entity: roh.car,
+          active: true, entity: w.carRef,
           // Nur solange wirklich geladen wird – ein Herkunftsring an einem
           // stehenden Auto wäre eine Aussage über nichts.
           innerSegments: c.car_mix && z(w.power) > T ? mischung : null,
@@ -1610,6 +1770,11 @@ const LABELS = {
   name: "Name",
   icon: "Symbol",
   car: "Auto – Ladestand (optional)",
+  plug: "Ladestecker – Zustand (optional)",
+  charge_power: "Ladeleistung (optional)",
+  car_match: "Auto selbst zuordnen",
+  car_match_window: "Steckerzeitpunkte dürfen auseinanderliegen (s)",
+  car_match_tolerance: "Leistungen dürfen abweichen (%)",
   car_name: "Auto – Name",
   car_icon: "Auto – Symbol",
   color: "Farbe",
@@ -1642,6 +1807,19 @@ const HELFER = {
     "Anschalten, wenn dieses Gerät hinter dem Hauszähler hängt. Die Karte " +
     "rechnet seine Leistung dann aus dem Hausverbrauch heraus, statt sie " +
     "doppelt zu zeigen.",
+  car_match:
+    "Aus: es gilt, was an der Wallbox eingetragen ist. Über den Stecker: " +
+    "wer zusammen eingesteckt wurde, gehört zusammen – dafür braucht es " +
+    "je einen Steckersensor an Wallbox und Auto. Über die Ladeleistung: " +
+    "verglichen wird, was die Wallbox abgibt und das Auto aufnimmt. " +
+    "Entschieden wird einmal; gelöst erst, wenn das Kabel gezogen ist.",
+  car_match_window:
+    "Sensoren melden nicht im selben Augenblick – ein Auto, das seinen " +
+    "Zustand aus der Cloud holt, hinkt schon mal Minuten hinterher.",
+  car_match_tolerance:
+    "Die Wallbox misst am Kabel, das Auto hinter dem Laderegler. Ein Rest " +
+    "Unterschied bleibt immer. Passt nichts, wird lieber kein Auto " +
+    "gezeigt als das falsche.",
 };
 const computeHelper = (s) => HELFER[s.name];
 
@@ -1763,11 +1941,31 @@ function toForm(cfg) {
   f.color_battery_discharge = col.battery_discharge;
   f.color_wallboxes = typeof col.wallboxes === "string" ? col.wallboxes : undefined;
   f.color_cars = typeof col.cars === "string" ? col.cars : undefined;
+
+  f.car_match = ["plug", "power"].includes(c.car_match) ? c.car_match : "off";
+  f.car_match_window = Number.isFinite(c.car_match_window) ? c.car_match_window : 300;
+  // Im Formular Prozent, in der Konfiguration ein Anteil.
+  f.car_match_tolerance = Math.round(
+    (Number.isFinite(c.car_match_tolerance) ? c.car_match_tolerance : 0.25) * 100
+  );
   return f;
 }
 
 function fromForm(d, cfg) {
   const neu = { ...cfg };
+
+  // "off" ist die Vorgabe und muss nicht in der Konfiguration stehen; die
+  // beiden Spielräume nur, solange die Zuordnung überhaupt läuft.
+  neu.car_match = ["plug", "power"].includes(d.car_match) ? d.car_match : undefined;
+  neu.car_match_window =
+    neu.car_match === "plug" && Number.isFinite(d.car_match_window) && d.car_match_window !== 300
+      ? d.car_match_window
+      : undefined;
+  neu.car_match_tolerance =
+    neu.car_match === "power" && Number.isFinite(d.car_match_tolerance) && d.car_match_tolerance !== 25
+      ? d.car_match_tolerance / 100
+      : undefined;
+
   neu.title = d.title || undefined;
   neu.pv = d.pv || undefined;
   neu.external = d.external || undefined;
@@ -1824,6 +2022,7 @@ const SEITEN = [
   { id: "house",     label: "Zuhause",       icon: "mdi:home" },
   { id: "batteries", label: "Speicher",      icon: "mdi:battery-high", liste: true },
   { id: "wallboxes", label: "Wallboxen",     icon: "mdi:ev-station",   liste: true },
+  { id: "cars",      label: "Autos",         icon: "mdi:car-electric", liste: true },
   { id: "anzeige",   label: "Darstellung",   icon: "mdi:tune" },
 ];
 
@@ -1890,6 +2089,8 @@ const SEITEN_SCHEMA = {
  * wo man die Geräte einrichtet – nicht in eine Sammelseite, auf der man sie
  * erst suchen muss.
  */
+const LISTEN_TITEL = { cars: "Zuordnung" };
+
 const LISTEN_SCHEMA = {
   batteries: () => [
     { name: "color_battery", selector: SEL_COLOR },
@@ -1903,6 +2104,26 @@ const LISTEN_SCHEMA = {
       { name: "color_wallboxes", selector: SEL_COLOR },
       { name: "color_cars", selector: SEL_COLOR },
     ] },
+  ],
+  cars: (d) => [
+    {
+      name: "car_match",
+      selector: { select: { mode: "dropdown", options: [
+        { value: "off", label: "Aus – feste Zuordnung an der Wallbox" },
+        { value: "plug", label: "Über den Ladestecker" },
+        { value: "power", label: "Über die Ladeleistung" },
+      ] } },
+    },
+    ...(d.car_match === "plug"
+      ? [{ name: "car_match_window",
+           selector: { number: { min: 10, max: 3600, step: 10, mode: "box",
+                                 unit_of_measurement: "s" } } }]
+      : []),
+    ...(d.car_match === "power"
+      ? [{ name: "car_match_tolerance",
+           selector: { number: { min: 1, max: 90, step: 1, mode: "box",
+                                 unit_of_measurement: "%" } } }]
+      : []),
   ],
 };
 
@@ -1996,7 +2217,7 @@ const KIND = {
     label: "Wallbox", max: 4,
     toForm: (x) => ({
       name: x.name, icon: x.icon, power: alsListe(x.power),
-      included_in_house: !!x.included_in_house,
+      included_in_house: !!x.included_in_house, plug: x.plug,
       car: x.car, car_name: x.car_name, car_icon: x.car_icon,
     }),
     fromForm: (d) =>
@@ -2007,6 +2228,7 @@ const KIND = {
         power: !d.power || !d.power.length ? undefined : d.power.length === 1 ? d.power[0] : d.power,
         // false ist die Vorgabe und muss nicht in der Konfiguration stehen.
         included_in_house: d.included_in_house ? true : undefined,
+        plug: d.plug,
         car: d.car,
         car_name: d.car_name,
         car_icon: d.car_icon,
@@ -2018,6 +2240,7 @@ const KIND = {
       ] },
       { name: "power", selector: { entity: { ...SEL_ENTITY.entity, multiple: true } } },
       { name: "included_in_house", selector: { boolean: {} } },
+      { name: "plug", selector: SEL_ENTITY },
       { type: "expandable", name: "", title: "Auto an dieser Wallbox", icon: "mdi:car-electric",
         schema: [
           { name: "car", selector: SEL_ENTITY },
@@ -2026,6 +2249,29 @@ const KIND = {
             { name: "car_icon", selector: SEL_ICON },
           ] },
         ] },
+    ],
+  },
+  cars: {
+    label: "Auto", max: 4,
+    toForm: (x) => ({
+      name: x.name, icon: x.icon, soc: x.soc, plug: x.plug, charge_power: x.power,
+    }),
+    fromForm: (d) =>
+      clean({
+        name: d.name,
+        icon: d.icon,
+        soc: d.soc,
+        plug: d.plug,
+        power: d.charge_power,
+      }),
+    schema: () => [
+      { type: "grid", name: "", schema: [
+        { name: "name", selector: SEL_TEXT },
+        { name: "icon", selector: SEL_ICON },
+      ] },
+      { name: "soc", selector: SEL_ENTITY },
+      { name: "plug", selector: SEL_ENTITY },
+      { name: "charge_power", selector: SEL_ENTITY },
     ],
   },
 };
@@ -2212,6 +2458,14 @@ class PowerflowPlusMobileEditor extends HTMLElement {
         const autos = (c.wallboxes || []).filter((w) => w.car).length;
         return n ? n + " von 4" + (autos ? ", " + autos + " mit Auto" : "") : "keine";
       }
+      case "cars": {
+        const n = (c.cars || []).length;
+        if (!n) return "keine";
+        const wie = c.car_match === "plug" ? "über den Stecker"
+          : c.car_match === "power" ? "über die Leistung"
+          : "fest zugeordnet";
+        return n + " von 4, " + wie;
+      }
       default: return "";
     }
   }
@@ -2317,7 +2571,7 @@ class PowerflowPlusMobileEditor extends HTMLElement {
     if (extra) {
       const trenner = document.createElement("p");
       trenner.className = "abschnitt";
-      trenner.textContent = "Farben";
+      trenner.textContent = LISTEN_TITEL[art] || "Farben";
       this._wurzel.appendChild(trenner);
 
       const daten = toForm(this._config);
@@ -2325,7 +2579,7 @@ class PowerflowPlusMobileEditor extends HTMLElement {
       form.hass = this._hass;
       form.computeLabel = computeLabel;
       form.computeHelper = computeHelper;
-      form.schema = extra();
+      form.schema = extra(daten);
       form.data = daten;
       form.addEventListener("value-changed", (ev) => {
         ev.stopPropagation();
