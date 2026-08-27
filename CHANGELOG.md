@@ -37,6 +37,23 @@ die Versionsnummern [Semantic Versioning](https://semver.org/lang/de/).
   wird.
 * **Wallboxen haben ein Feld für den Steckerzustand** (`plug`).
 
+### Behoben
+
+* **Zwei Eingaben nacheinander im selben Formular – die erste ging verloren.**
+  Das steckte seit 1.3.1 in jeder Fassung. Damit beim Tippen der Eingabefokus
+  nicht verlorengeht, zeichnet der Editor absichtlich nicht neu; dadurch blieb
+  aber `ha-form` auf dem Datenstand von vorhin stehen, und weil es jede Eingabe
+  auf diesem Stand aufbaut, warf die zweite die erste wieder heraus. Wer Name
+  **und** Sensor eines Speichers hintereinander setzte, hatte danach nur den
+  Sensor. Der Stand wird jetzt nachgezogen, ohne neu zu zeichnen.
+* **Die Kopfzeile eines Listeneintrags blieb auf „Auto 2" stehen**, während im
+  Namensfeld schon „Skoda" stand – dieselbe Ursache. Sie zieht jetzt beim
+  Tippen mit. Nebenbei steht der Name dort nicht mehr als Markup, sondern als
+  Text.
+* **Der Steckerzustand ließ sich nicht auswählen.** Das Feld hing am
+  Zahlenfilter, mit dem ein `binary_sensor` in der Auswahl gar nicht erst
+  auftaucht. Es hat jetzt einen eigenen Filter für Zustandsentitäten.
+
 ### Weiterhin gültig
 
 * `car:` an der Wallbox schlägt die selbsttätige Suche. Das dort genannte Auto
@@ -255,8 +272,8 @@ Erste Veröffentlichung.
   hohe, schmale Flächen ausgelegt.
 * Reine Anzeige, es lässt sich nichts steuern.
 
-[Unveröffentlicht]: https://github.com/thomansky/power-flow-card-plus-mobile/compare/v1.7.0-beta.1...HEAD
-[1.7.0]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.7.0-beta.1
+[Unveröffentlicht]: https://github.com/thomansky/power-flow-card-plus-mobile/compare/v1.7.0-beta.2...HEAD
+[1.7.0]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.7.0-beta.2
 [1.6.1]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.6.1
 [1.6.0]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.6.0
 [1.5.1]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.5.1

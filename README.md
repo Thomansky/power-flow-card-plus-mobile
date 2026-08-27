@@ -304,6 +304,12 @@ cars:
 Der Steckersensor darf alles sein, was `on`/`off`, `true`/`false`,
 `connected`/`disconnected`, `plugged`/`unplugged` oder ähnlich meldet. Was in
 keines der beiden Lager fällt, gilt als *keine Aussage* – nicht als „nein".
+„Ready" gehört bewusst in keines der Lager: die einen meinen damit
+„eingesteckt und bereit", die anderen „steht bereit, nichts steckt".
+
+Am besten ist ein Sensor, der **nur beim Ein- und Ausstecken umspringt**. Ein
+Statussensor mit vielen Werten (lädt, fertig, pausiert) ändert sich auch
+mittendrin – dann stimmt der Zeitpunkt nicht mehr, mit dem verglichen wird.
 
 Sensoren melden nicht im selben Augenblick; ein Auto, das seinen Zustand aus der
 Cloud holt, hinkt schon mal Minuten hinterher. Der Spielraum liegt deshalb bei

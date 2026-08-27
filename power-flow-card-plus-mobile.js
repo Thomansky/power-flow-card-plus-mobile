@@ -565,7 +565,11 @@ class PowerflowPlusMobileCard extends HTMLElement {
       // Wie die Karte herausfindet, welches Auto an welcher Wallbox hängt:
       // gar nicht ("off"), über die beiden Steckerzustände ("plug") oder
       // über den Abgleich der Ladeleistung ("power").
-      car_match: ["plug", "power"].includes(config.car_match) ? config.car_match : "off",
+      plug:
+    "Am besten ein binary_sensor, der nur beim Ein- und Ausstecken umspringt. " +
+    "Ein Statussensor mit vielen Werten (laden, fertig, pausiert) ändert sich " +
+    "auch mittendrin – dann stimmt der Zeitpunkt nicht mehr, mit dem verglichen wird.",
+  car_match: ["plug", "power"].includes(config.car_match) ? config.car_match : "off",
       // Wie weit die beiden Steckerzeitpunkte auseinanderliegen dürfen.
       car_match_window: Number.isFinite(config.car_match_window) ? config.car_match_window : 300,
       // Wie stark die beiden Leistungen abweichen dürfen, als Anteil.
@@ -722,9 +726,13 @@ class PowerflowPlusMobileCard extends HTMLElement {
       if (!st) return null;
       const w = String(st.state).trim().toLowerCase();
       if (["on", "true", "connected", "plugged", "plugged_in", "locked",
-           "charging", "ready", "cable_connected"].includes(w)) return true;
+           "charging", "cable_connected", "ready_to_charge", "awaiting_start",
+           "complete", "completed", "paused", "stopped", "home"].includes(w)) return true;
       if (["off", "false", "disconnected", "unplugged", "not_connected",
-           "none", "free", "no_cable"].includes(w)) return false;
+           "none", "free", "no_cable", "not_home", "away"].includes(w)) return false;
+      // Absichtlich nicht dabei: "ready". Die einen meinen damit
+      // "eingesteckt und bereit", die anderen "steht bereit, nichts steckt".
+      // Bei einem falschen Ja stünde das falsche Auto da.
       return null;
     };
 
@@ -1746,6 +1754,14 @@ class PowerflowPlusMobileCard extends HTMLElement {
  * und ein strenger Filter würde genau die verstecken.
  */
 const SEL_ENTITY = { entity: { filter: [{ domain: ["sensor", "input_number", "number"] }] } };
+// Der Steckerzustand ist keine Zahl. Mit dem Zahlenfilter oben taucht ein
+// binary_sensor in der Auswahl gar nicht erst auf.
+const SEL_ZUSTAND = {
+  entity: { filter: [{ domain: [
+    "binary_sensor", "sensor", "input_boolean", "switch",
+    "select", "input_select", "lock", "device_tracker",
+  ] }] },
+};
 const SEL_COLOR = { ui_color: {} };
 const SEL_TEXT = { text: {} };
 const SEL_ICON = { icon: {} };
@@ -2240,7 +2256,7 @@ const KIND = {
       ] },
       { name: "power", selector: { entity: { ...SEL_ENTITY.entity, multiple: true } } },
       { name: "included_in_house", selector: { boolean: {} } },
-      { name: "plug", selector: SEL_ENTITY },
+      { name: "plug", selector: SEL_ZUSTAND },
       { type: "expandable", name: "", title: "Auto an dieser Wallbox", icon: "mdi:car-electric",
         schema: [
           { name: "car", selector: SEL_ENTITY },
@@ -2270,7 +2286,7 @@ const KIND = {
         { name: "icon", selector: SEL_ICON },
       ] },
       { name: "soc", selector: SEL_ENTITY },
-      { name: "plug", selector: SEL_ENTITY },
+      { name: "plug", selector: SEL_ZUSTAND },
       { name: "charge_power", selector: SEL_ENTITY },
     ],
   },
@@ -2520,6 +2536,9 @@ class PowerflowPlusMobileEditor extends HTMLElement {
         this._render();
         return;
       }
+      // Siehe _zeile: ohne das würfe die nächste Eingabe die vorige wieder
+      // heraus, weil ha-form auf seinem eigenen `data` aufbaut.
+      form.data = neu;
       this._fire(fromForm(neu, this._config));
     });
     this._wurzel.appendChild(form);
@@ -2584,7 +2603,12 @@ class PowerflowPlusMobileEditor extends HTMLElement {
       form.addEventListener("value-changed", (ev) => {
         ev.stopPropagation();
         if (this._schreibt) return;
-        this._fire(fromForm(ev.detail.value, this._config));
+        const neu = ev.detail.value;
+        // Siehe _zeile. Hier hängt auch das Schema an den Daten – erst mit
+        // dem Nachziehen taucht der passende Spielraum sofort auf.
+        form.schema = extra(neu);
+        form.data = neu;
+        this._fire(fromForm(neu, this._config));
       });
       this._wurzel.appendChild(form);
     }
@@ -2613,9 +2637,16 @@ class PowerflowPlusMobileEditor extends HTMLElement {
 
     const kopf = document.createElement("summary");
     kopf.className = "zeile-kopf";
-    kopf.innerHTML =
-      "<span>" + (item.name || k.label + " " + (i + 1)) + "</span>" +
-      '<span class="zeile-wert">' + this._zeileWert(art, item) + "</span>";
+    const kopfName = document.createElement("span");
+    const kopfWert = document.createElement("span");
+    kopfWert.className = "zeile-wert";
+    const beschrifte = (eintrag) => {
+      kopfName.textContent = eintrag.name || k.label + " " + (i + 1);
+      kopfWert.textContent = this._zeileWert(art, eintrag);
+    };
+    beschrifte(item);
+    kopf.appendChild(kopfName);
+    kopf.appendChild(kopfWert);
     huelle.appendChild(kopf);
 
     const inhalt = document.createElement("div");
@@ -2639,6 +2670,15 @@ class PowerflowPlusMobileEditor extends HTMLElement {
       }
       const liste = [...(this._config[art] || [])];
       liste[i] = k.fromForm(neu);
+      // Beim Tippen wird bewusst nicht neu gezeichnet, sonst verlöre das Feld
+      // den Eingabefokus. Die Kopfzeile bliebe dann aber auf dem alten Namen
+      // stehen – also wird sie hier von Hand nachgezogen.
+      beschrifte(liste[i]);
+      // ha-form baut jede Eingabe auf seinem eigenen `data` auf. Weil beim
+      // Tippen absichtlich nicht neu gezeichnet wird, bliebe das auf dem
+      // Stand von vorhin stehen – die nächste Eingabe würde die vorige
+      // wieder herauswerfen. Deshalb hier von Hand nachziehen.
+      form.data = neu;
       this._fire(art === "sources"
         ? mitQuellen(this._config, liste)
         : { ...this._config, [art]: liste });
@@ -2675,6 +2715,15 @@ class PowerflowPlusMobileEditor extends HTMLElement {
   }
 
   _zeileWert(art, item) {
+    // Ein Auto hat keine Leistungsliste, sondern drei einzelne Sensoren –
+    // "1 Sensor" sagte hier nichts.
+    if (art === "cars") {
+      const teile = [];
+      if (item.soc) teile.push("Ladestand");
+      if (item.plug) teile.push("Stecker");
+      if (item.power) teile.push("Leistung");
+      return teile.length ? teile.join(" · ") : "–";
+    }
     if (art === "batteries") {
       return istPaar(item.power) ? "getrennt" : item.power ? "ein Sensor" : "–";
     }
