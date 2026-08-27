@@ -40,7 +40,8 @@ die Versionsnummern [Semantic Versioning](https://semver.org/lang/de/).
 ### Behoben
 
 * **Zwei Eingaben nacheinander im selben Formular – die erste ging verloren.**
-  Das steckte seit 1.3.1 in jeder Fassung. Damit beim Tippen der Eingabefokus
+  Das steckte mindestens seit 1.5.1 in jeder Fassung – nachgeprüft an 1.5.1
+  und 1.6.1; ältere liegen nicht mehr vor. Damit beim Tippen der Eingabefokus
   nicht verlorengeht, zeichnet der Editor absichtlich nicht neu; dadurch blieb
   aber `ha-form` auf dem Datenstand von vorhin stehen, und weil es jede Eingabe
   auf diesem Stand aufbaut, warf die zweite die erste wieder heraus. Wer Name
