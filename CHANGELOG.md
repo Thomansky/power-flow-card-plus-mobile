@@ -32,9 +32,20 @@ die Versionsnummern [Semantic Versioning](https://semver.org/lang/de/).
   beste Einzelpaar: sonst nimmt die sicherste Paarung ein Auto weg, das anderswo
   das einzig mögliche war.
 
+* **Die feste Zuordnung steht jetzt beim Auto**, nicht mehr nur an der Wallbox:
+  je Auto eine Auswahl mit den angelegten Wallboxen (`wallbox:`, die Nummer in
+  der Liste). Das ist die Richtung, in der man denkt – erst die Wallboxen
+  einrichten, dann je Auto sagen, wo es hängt.
+
+  Die Reihenfolge: was an der Wallbox unter `car:` steht, schlägt alles; dann
+  die Wahl des Autos; dann die Suche. Weil das Erste alles schlägt, räumt der
+  Editor eine alte Eintragung an der Wallbox weg, sobald ein Auto sich diese
+  Wallbox aussucht – sonst bliebe die Wahl wirkungslos und niemand sähe, warum.
+  Wird eine Wallbox entfernt, ziehen die Verweise der Autos mit.
+
 * **Autos sind jetzt eine eigene Seite im Editor**, mit Ladestand, Name, Symbol,
-  Steckerzustand und Ladeleistung; bis zu vier. Darunter steht, wie zugeordnet
-  wird.
+  Wallbox, Steckerzustand und Ladeleistung; bis zu vier. Darunter steht, wie
+  zugeordnet wird.
 * **Wallboxen haben ein Feld für den Steckerzustand** (`plug`).
 
 ### Behoben
@@ -273,8 +284,8 @@ Erste Veröffentlichung.
   hohe, schmale Flächen ausgelegt.
 * Reine Anzeige, es lässt sich nichts steuern.
 
-[Unveröffentlicht]: https://github.com/thomansky/power-flow-card-plus-mobile/compare/v1.7.0-beta.2...HEAD
-[1.7.0]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.7.0-beta.2
+[Unveröffentlicht]: https://github.com/thomansky/power-flow-card-plus-mobile/compare/v1.7.0-beta.3...HEAD
+[1.7.0]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.7.0-beta.3
 [1.6.1]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.6.1
 [1.6.0]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.6.0
 [1.5.1]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.5.1

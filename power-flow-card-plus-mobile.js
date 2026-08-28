@@ -541,7 +541,12 @@ class PowerflowPlusMobileCard extends HTMLElement {
           // Hängt hinter dem Hauszähler und steckt in dessen Messwert schon drin.
           in_house: !!o.included_in_house,
           // Zustand des Ladesteckers. Nur für die selbsttätige Zuordnung.
-          plug: o.plug ?? null,
+          wallbox:
+    "Fest zuordnen, ohne Suche. „Selbst zuordnen“ überlässt es der " +
+    "Einstellung unter der Liste. Was an der Wallbox selbst unter „Auto an " +
+    "dieser Wallbox“ steht, schlägt beides – deshalb räumt die Karte das dort " +
+    "weg, sobald hier eine Wallbox gewählt wird.",
+  plug: o.plug ?? null,
           // Das Auto, das an dieser Wallbox hängt. Steht hier eins, gilt es –
           // von Hand eingetragen schlägt selbst gefunden.
           car: o.car ?? null,
@@ -560,6 +565,11 @@ class PowerflowPlusMobileCard extends HTMLElement {
           // Beides nur für die selbsttätige Zuordnung.
           plug: o.plug ?? null,
           power: o.power ?? null,
+          // Feste Zuordnung von der Autoseite aus: die wievielte Wallbox,
+          // von 1 an gezählt. Schlägt die selbsttätige Suche.
+          wallbox: Number.isFinite(o.wallbox) && o.wallbox >= 1
+            ? Math.floor(o.wallbox)
+            : null,
         };
       }),
       // Wie die Karte herausfindet, welches Auto an welcher Wallbox hängt:
@@ -709,6 +719,22 @@ class PowerflowPlusMobileCard extends HTMLElement {
    *
    * @returns {Object} Wallbox-Nummer → Auto-Nummer
    */
+  /**
+   * Feste Zuordnungen von der Autoseite: Wallbox-Nummer → Auto-Nummer.
+   * Zeigen zwei Autos auf dieselbe Wallbox, gewinnt das erste – zwei Autos
+   * an einem Kabel gibt es nicht.
+   */
+  _festeAutos(c) {
+    const fest = {};
+    c.cars.forEach((a, ai) => {
+      if (a.wallbox == null) return;
+      const wi = a.wallbox - 1;
+      if (!c.wallboxes[wi] || c.wallboxes[wi].car) return;
+      if (fest[wi] === undefined) fest[wi] = ai;
+    });
+    return fest;
+  }
+
   _ordneAutosZu(c) {
     if (!this._paare) this._paare = {};
     if (c.car_match === "off" || !c.cars.length) {
@@ -761,12 +787,14 @@ class PowerflowPlusMobileCard extends HTMLElement {
     // Kreisen gleichzeitig.
     const belegt = new Set(Object.values(this._paare));
     const vonHand = new Set(c.wallboxes.map((w) => w.car).filter(Boolean));
+    const fest = this._festeAutos(c);
+    const festeAutos = new Set(Object.values(fest));
     const freieAutos = c.cars
       .map((x, i) => ({ ...x, i }))
-      .filter((x) => !belegt.has(x.i) && !vonHand.has(x.soc));
+      .filter((x) => !belegt.has(x.i) && !festeAutos.has(x.i) && !vonHand.has(x.soc));
     const offene = c.wallboxes
       .map((w, i) => ({ ...w, i }))
-      .filter((w) => !w.car && this._paare[w.i] === undefined)
+      .filter((w) => !w.car && fest[w.i] === undefined && this._paare[w.i] === undefined)
       .filter((w) => steckt(w.plug) === true || laedt(w));
     if (!offene.length || !freieAutos.length) return this._paare;
 
@@ -908,9 +936,12 @@ class PowerflowPlusMobileCard extends HTMLElement {
       name: b.name,
     }));
     const paare = this._ordneAutosZu(c);
+    const feste = this._festeAutos(c);
     const wallboxes = c.wallboxes.map((w, i) => {
-      // Von Hand eingetragen schlägt selbst gefunden.
-      const auto = w.car ? null : c.cars[paare[i]];
+      // Reihenfolge: was an der Wallbox steht, dann was das Auto sagt,
+      // dann was die Karte selbst gefunden hat.
+      const nummer = feste[i] !== undefined ? feste[i] : paare[i];
+      const auto = w.car ? null : c.cars[nummer];
       const soc = w.car || (auto ? auto.soc : null);
       return {
         index: i,
@@ -1766,6 +1797,36 @@ const SEL_COLOR = { ui_color: {} };
 const SEL_TEXT = { text: {} };
 const SEL_ICON = { icon: {} };
 
+/**
+ * Räumt die feste Eintragung an der Wallbox weg, die dieses Auto gerade
+ * gewählt hat. Ohne das bliebe die Wahl wirkungslos: was an der Wallbox
+ * steht, schlägt alles andere.
+ */
+function ohneAltesAuto(cfg, auto) {
+  if (!auto || !auto.wallbox) return cfg;
+  const wbs = [...(cfg.wallboxes || [])];
+  const i = auto.wallbox - 1;
+  if (!wbs[i] || !wbs[i].car) return cfg;
+  const w = { ...wbs[i] };
+  delete w.car; delete w.car_name; delete w.car_icon;
+  wbs[i] = w;
+  return { ...cfg, wallboxes: wbs };
+}
+
+/**
+ * Nach dem Entfernen einer Wallbox zeigen die Autos dahinter sonst auf die
+ * falsche – und das Auto der entfernten auf gar keine.
+ */
+function nachWallboxLoeschen(cars, weg) {
+  if (!Array.isArray(cars) || !cars.length) return cars;
+  return cars.map((a) => {
+    if (!a || !a.wallbox) return a;
+    if (a.wallbox - 1 === weg) { const k = { ...a }; delete k.wallbox; return k; }
+    if (a.wallbox - 1 > weg) return { ...a, wallbox: a.wallbox - 1 };
+    return a;
+  });
+}
+
 const LABELS = {
   title: "Überschrift",
   pv: "Solarerzeugung",
@@ -1788,6 +1849,7 @@ const LABELS = {
   car: "Auto – Ladestand (optional)",
   plug: "Ladestecker – Zustand (optional)",
   charge_power: "Ladeleistung (optional)",
+  wallbox: "Hängt an dieser Wallbox",
   car_match: "Auto selbst zuordnen",
   car_match_window: "Steckerzeitpunkte dürfen auseinanderliegen (s)",
   car_match_tolerance: "Leistungen dürfen abweichen (%)",
@@ -2271,6 +2333,8 @@ const KIND = {
     label: "Auto", max: 4,
     toForm: (x) => ({
       name: x.name, icon: x.icon, soc: x.soc, plug: x.plug, charge_power: x.power,
+      // Im Formular eine Zeichenkette, in der Konfiguration eine Zahl.
+      wallbox: x.wallbox ? String(x.wallbox) : "",
     }),
     fromForm: (d) =>
       clean({
@@ -2279,13 +2343,25 @@ const KIND = {
         soc: d.soc,
         plug: d.plug,
         power: d.charge_power,
+        wallbox: d.wallbox ? Number(d.wallbox) : undefined,
       }),
-    schema: () => [
+    schema: (d, cfg) => [
       { type: "grid", name: "", schema: [
         { name: "name", selector: SEL_TEXT },
         { name: "icon", selector: SEL_ICON },
       ] },
       { name: "soc", selector: SEL_ENTITY },
+      // Die Wallbox wird hier gewählt, nicht das Auto dort. Ohne angelegte
+      // Wallboxen gäbe es nichts zu wählen – dann bleibt das Feld weg.
+      ...((cfg && cfg.wallboxes && cfg.wallboxes.length)
+        ? [{ name: "wallbox", selector: { select: { mode: "dropdown", options: [
+            { value: "", label: "Selbst zuordnen" },
+            ...cfg.wallboxes.map((w, i) => ({
+              value: String(i + 1),
+              label: w.name || "Wallbox " + (i + 1),
+            })),
+          ] } } }]
+        : []),
       { name: "plug", selector: SEL_ZUSTAND },
       { name: "charge_power", selector: SEL_ENTITY },
     ],
@@ -2656,7 +2732,7 @@ class PowerflowPlusMobileEditor extends HTMLElement {
     form.hass = this._hass;
     form.computeLabel = computeLabel;
     form.computeHelper = computeHelper;
-    form.schema = k.schema(daten);
+    form.schema = k.schema(daten, this._config);
     form.data = daten;
     form.addEventListener("value-changed", (ev) => {
       ev.stopPropagation();
@@ -2679,9 +2755,10 @@ class PowerflowPlusMobileEditor extends HTMLElement {
       // Stand von vorhin stehen – die nächste Eingabe würde die vorige
       // wieder herauswerfen. Deshalb hier von Hand nachziehen.
       form.data = neu;
-      this._fire(art === "sources"
+      const stand = art === "sources"
         ? mitQuellen(this._config, liste)
-        : { ...this._config, [art]: liste });
+        : { ...this._config, [art]: liste };
+      this._fire(art === "cars" ? ohneAltesAuto(stand, liste[i]) : stand);
     });
     inhalt.appendChild(form);
 
@@ -2704,9 +2781,14 @@ class PowerflowPlusMobileEditor extends HTMLElement {
         else if (n > i) gerueckt.add(n - 1);
       });
       this._offen = gerueckt;
-      this._fire(art === "sources"
+      let stand = art === "sources"
         ? mitQuellen(this._config, liste)
-        : { ...this._config, [art]: liste.length ? liste : undefined }, true);
+        : { ...this._config, [art]: liste.length ? liste : undefined };
+      if (art === "wallboxes") {
+        const autos = nachWallboxLoeschen(this._config.cars, i);
+        stand = { ...stand, cars: autos && autos.length ? autos : undefined };
+      }
+      this._fire(stand, true);
     });
     inhalt.appendChild(weg);
 
@@ -2722,6 +2804,10 @@ class PowerflowPlusMobileEditor extends HTMLElement {
       if (item.soc) teile.push("Ladestand");
       if (item.plug) teile.push("Stecker");
       if (item.power) teile.push("Leistung");
+      if (item.wallbox) {
+        const w = (this._config.wallboxes || [])[item.wallbox - 1];
+        teile.unshift("an " + ((w && w.name) || "Wallbox " + item.wallbox));
+      }
       return teile.length ? teile.join(" · ") : "–";
     }
     if (art === "batteries") {

@@ -183,7 +183,7 @@ colors:
 | `self_consumption` | – | Optional: eigener Sensor in % statt der Rechnung |
 | `batteries` | `[]` | Höchstens zwei. Je `power` **oder** `charge`+`discharge`, dazu `soc`, `name`, `icon`, `included_in_house`. |
 | `wallboxes` | `[]` | Höchstens vier. Je `power` (auch Liste), `name`, `icon`, `included_in_house`, `plug`, `car`, `car_name`, `car_icon`. |
-| `cars` | `[]` | Höchstens vier. Je `soc`, `name`, `icon`, `plug`, `power`. |
+| `cars` | `[]` | Höchstens vier. Je `soc`, `name`, `icon`, `wallbox`, `plug`, `power`. |
 | `car_match` | `off` | Auto selbst zuordnen: `off`, `plug` oder `power`. Siehe unten. |
 | `car_match_window` | `300` | Nur bei `plug`: wie weit die Steckerzeitpunkte auseinanderliegen dürfen (s) |
 | `car_match_tolerance` | `0.25` | Nur bei `power`: wie stark die Leistungen abweichen dürfen (Anteil) |
@@ -273,10 +273,43 @@ Normalerweise steht das fest in der Konfiguration: `car:` an der Wallbox zeigt
 auf den Ladestand des Autos, das dort hängt. Bei zwei Wallboxen und zwei Autos,
 die mal so und mal so eingesteckt werden, ist das falsch, sobald jemand tauscht.
 
-Deshalb kann die Karte die Zuordnung selbst suchen. Dazu die Autos einmal als
-eigene Liste anlegen und `car_match` setzen. **Von Hand eingetragen schlägt
-immer selbst gefunden** – wo ein `car:` steht, wird nicht gesucht, und das dort
-genannte Auto ist für die Suche gesperrt.
+Die Autos werden einmal als eigene Liste angelegt. Von dort aus lässt sich je
+Auto entweder eine Wallbox fest wählen – oder die Karte sucht sich die
+Zuordnung selbst.
+
+### Fest, aber vom Auto aus
+
+`wallbox:` ist die Nummer der Wallbox in der Liste, von 1 an gezählt. Im Editor
+steht dort eine Auswahl mit den Namen der angelegten Wallboxen, die Nummer
+bekommt man nur zu sehen, wenn man ins YAML schaut.
+
+```yaml
+wallboxes:
+  - power: sensor.wallbox_1_leistung
+    name: Garage
+  - power: sensor.wallbox_2_leistung
+    name: Hof
+cars:
+  - soc: sensor.kombi_ladestand
+    name: Kombi
+    wallbox: 2          # hängt am Hof
+  - soc: sensor.kleiner_ladestand
+    name: Kleiner       # sucht sich seine Wallbox selbst
+```
+
+Wer die Wallboxen im YAML umsortiert, muss die Nummern mitziehen – im Editor
+geschieht das beim Entfernen von allein.
+
+### Die Reihenfolge
+
+1. `car:` **an der Wallbox** – die alte Schreibweise. Steht dort etwas, gilt es,
+   und das Auto ist für alles Weitere gesperrt.
+2. `wallbox:` **am Auto** – die feste Wahl von der Autoseite.
+3. `car_match` – die selbsttätige Suche, für alles, was dann noch offen ist.
+
+Weil (1) alles andere schlägt, räumt der Editor eine alte Eintragung an der
+Wallbox weg, sobald ein Auto sich diese Wallbox aussucht. Sonst bliebe die Wahl
+wirkungslos und niemand sähe, warum.
 
 ### Über den Ladestecker
 
