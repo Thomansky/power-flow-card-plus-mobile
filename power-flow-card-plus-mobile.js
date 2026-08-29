@@ -1053,6 +1053,10 @@ class PowerflowPlusMobileCard extends HTMLElement {
     // Ohne Hausverbrauchs-Sensor gibt es keine sinnvolle Autarkie – dann
     // lieber nichts anzeigen als 100 %, was wie ein Messwert aussähe.
     const autarkySensor = this._pctVal(c.autarky);
+    // Ist ein Sensor hinterlegt, aber gerade nicht lesbar, rechnet die Karte
+    // weiter – aber sie sagt es. Sonst steht dort eine Schätzung, die wie ein
+    // Messwert aussieht, und niemand kommt darauf, dass der Sensor fehlt.
+    const autarkyErsatz = !!c.autarky && autarkySensor == null;
     const autarky =
       autarkySensor != null
         ? autarkySensor / 100
@@ -1062,6 +1066,7 @@ class PowerflowPlusMobileCard extends HTMLElement {
 
     const gen = production + Math.max(0, -batteryPower);
     const eigenSensor = this._pctVal(c.self_consumption);
+    const selfErsatz = !!c.self_consumption && eigenSensor == null;
     const selfConsumption =
       eigenSensor != null
         ? eigenSensor / 100
@@ -1100,7 +1105,7 @@ class PowerflowPlusMobileCard extends HTMLElement {
       wallboxTotal,
       gridImport, gridExport,
       consumption,
-      autarky, selfConsumption,
+      autarky, selfConsumption, autarkyErsatz, selfErsatz,
       durchsatz,
       houseMix,
     };
@@ -1794,10 +1799,17 @@ class PowerflowPlusMobileCard extends HTMLElement {
           })()
         : null;
 
+      // Ein vorangestelltes ≈ heißt: der hinterlegte Sensor war nicht lesbar,
+      // das hier ist die eigene Rechnung. Ohne das Zeichen sähe eine
+      // Schätzung genauso aus wie ein Messwert.
+      const ersatzHinweis =
+        "Der hinterlegte Sensor ist gerade nicht lesbar – die Karte rechnet selbst.";
+      const pct = (f, ersatz) => (f == null ? "–" : (ersatz ? "≈" : "") + fmtPct(f));
       const tiles = [
-        { label: "Autarkie", value: fmtPct(v.autarky), f: v.autarky ?? 0, color: PAL.house,
-          stuecke: autarkieStuecke },
-        { label: "Eigenverbrauch", value: fmtPct(v.selfConsumption), f: v.selfConsumption ?? 0, color: PAL.pv },
+        { label: "Autarkie", value: pct(v.autarky, v.autarkyErsatz), f: v.autarky ?? 0,
+          color: PAL.house, stuecke: autarkieStuecke, ersatz: v.autarkyErsatz },
+        { label: "Eigenverbrauch", value: pct(v.selfConsumption, v.selfErsatz),
+          f: v.selfConsumption ?? 0, color: PAL.pv, ersatz: v.selfErsatz },
         { label: "Speicher", value: fmtSoc(v.batterySoc), f: (v.batterySoc ?? 0) / 100, color: this._batColor(v.batterySoc) },
       ];
       const balken = (t) =>
@@ -1811,7 +1823,8 @@ class PowerflowPlusMobileCard extends HTMLElement {
             `background:${t.color};box-shadow:0 0 5px ${t.color}"></div>`;
       this.shadowRoot.querySelector("#tiles").innerHTML = tiles
         .map((t) =>
-          `<div class="tile"><div class="t-label">${t.label}</div>` +
+          `<div class="tile"${t.ersatz ? ` title="${ersatzHinweis}"` : ""}>` +
+          `<div class="t-label">${t.label}</div>` +
           `<div class="t-value">${t.value}</div>` +
           `<div class="t-track">${balken(t)}</div></div>`
         )

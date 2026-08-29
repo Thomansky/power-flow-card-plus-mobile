@@ -64,6 +64,13 @@ die Versionsnummern [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Behoben
 
+* **Ein hinterlegter, aber unlesbarer Sensor sah aus wie ein Messwert.** Ist
+  `autarky` oder `self_consumption` gesetzt, der Sensor aber gerade nicht
+  lesbar, rechnet die Karte weiter selbst – das war so gewollt, aber sie sagte
+  es nicht. Man sah eine Zahl, hielt sie für den eigenen Sensor und wunderte
+  sich über die Abweichung. Jetzt steht in dem Fall ein **≈** davor, und das
+  Kästchen trägt einen Hinweis. Ohne hinterlegten Sensor ändert sich nichts:
+  dort ist die Rechnung der Normalfall und braucht keine Kennzeichnung.
 * **Ein Auto, das seine Wallbox nannte, konnte an einer anderen landen.** War
   der gewählte Platz schon belegt, warf die Suche es einfach woanders hin.
   „Hängt an dieser Wallbox" heißt aber nicht „notfalls auch an einer anderen".
@@ -301,8 +308,8 @@ Erste Veröffentlichung.
   hohe, schmale Flächen ausgelegt.
 * Reine Anzeige, es lässt sich nichts steuern.
 
-[Unveröffentlicht]: https://github.com/thomansky/power-flow-card-plus-mobile/compare/v1.7.0-beta.4...HEAD
-[1.7.0]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.7.0-beta.4
+[Unveröffentlicht]: https://github.com/thomansky/power-flow-card-plus-mobile/compare/v1.7.0-beta.5...HEAD
+[1.7.0]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.7.0-beta.5
 [1.6.1]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.6.1
 [1.6.0]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.6.0
 [1.5.1]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.5.1

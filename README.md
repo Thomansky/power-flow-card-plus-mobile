@@ -179,8 +179,8 @@ colors:
 | `pv`, `external` | – | Ältere Schreibweise, wird auf die ersten beiden Quellen abgebildet. |
 | `grid` | – | Netzleistung, positiv = Bezug. Auch als Paar `consumption`/`production`. |
 | `house` | – | Hausverbrauch gesamt |
-| `autarky` | – | Optional: eigener Sensor in % statt der Rechnung |
-| `self_consumption` | – | Optional: eigener Sensor in % statt der Rechnung |
+| `autarky` | – | Optional: eigener Sensor in % statt der Rechnung. Ist er nicht lesbar, rechnet die Karte und schreibt ein ≈ davor. |
+| `self_consumption` | – | Wie `autarky` |
 | `batteries` | `[]` | Höchstens zwei. Je `power` **oder** `charge`+`discharge`, dazu `soc`, `name`, `icon`, `included_in_house`. |
 | `wallboxes` | `[]` | Höchstens vier. Je `power` (auch Liste), `name`, `icon`, `included_in_house`, `plug`, `car`, `car_name`, `car_icon`. |
 | `cars` | `[]` | Höchstens vier. Je `soc`, `name`, `icon`, `wallbox`, `plug`, `power`. |
