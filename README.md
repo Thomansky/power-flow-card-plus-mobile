@@ -187,6 +187,7 @@ colors:
 | `car_match` | `off` | Auto selbst zuordnen: `off`, `plug` oder `power`. Siehe unten. |
 | `car_match_window` | `300` | Nur bei `plug`: wie weit die Steckerzeitpunkte auseinanderliegen dürfen (s) |
 | `car_match_tolerance` | `0.25` | Nur bei `power`: wie stark die Leistungen abweichen dürfen (Anteil) |
+| `car_match_unique` | `true` | Bleibt genau eine Wallbox offen und ein Auto frei, ohne Prüfung zuordnen |
 | `icons` | – | Symbole für `pv`, `external`, `grid`, `house` |
 | `colors` | – | Farben je Knoten, siehe unten |
 | `invert_grid` | `false` | Umschalten, wenn Deine Integration Bezug negativ meldet |
@@ -375,8 +376,18 @@ Unterschied bleibt immer, deshalb sind 25 % Abweichung erlaubt
   sie mitten im Laden um, sobald ein zweites Auto zufällig ähnlich viel zieht.
   Gelöst wird erst, wenn das Kabel gezogen ist; ohne Steckersensor, wenn nichts
   mehr fließt.
-* **Lieber kein Auto als das falsche.** Passt nichts innerhalb des Spielraums,
-  bleibt der Autokreis leer.
+* **Bleibt nur eins übrig, wird nicht mehr geprüft.** Ist am Ende genau eine
+  Wallbox offen und genau ein Auto frei, gehören die beiden zusammen – wer
+  sonst? Das erspart das Warten darauf, dass ein träger Sensor endlich in den
+  Spielraum fällt; gerade die Ladeleistung eines Autos kommt oft aus der Cloud
+  und hinkt Minuten hinterher. Meldet das Auto ausdrücklich, dass es nicht
+  steckt, bleibt es trotzdem draußen. Abschaltbar über `car_match_unique` –
+  sinnvoll, wenn öfter ein Auto gar nicht zu Hause ist.
+* **Lieber kein Auto als das falsche.** Passt nichts innerhalb des Spielraums
+  und ist der Fall auch nicht eindeutig, bleibt der Autokreis leer.
+* **Ein Auto, das seine Wallbox nennt, wandert nicht.** „Hängt an dieser
+  Wallbox" heißt nicht „notfalls auch an einer anderen" – ist der Platz belegt,
+  bleibt das Auto ungezeigt.
 * **Gesucht wird die beste Gesamtaufteilung**, nicht das beste Einzelpaar. Sonst
   nimmt die sicherste Paarung ein Auto weg, das anderswo das einzig mögliche war.
 * Ohne `car_match` ändert sich nichts: die Autoliste wird dann wie bisher der

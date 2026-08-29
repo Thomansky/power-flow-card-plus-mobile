@@ -48,8 +48,25 @@ die Versionsnummern [Semantic Versioning](https://semver.org/lang/de/).
   zugeordnet wird.
 * **Wallboxen haben ein Feld für den Steckerzustand** (`plug`).
 
+* **Bleibt nur eins übrig, wird sofort zugeordnet.** Ist am Ende genau eine
+  Wallbox offen und genau ein Auto frei, gehören die beiden zusammen – dafür
+  braucht es keine Prüfung mehr. Das erspart das Warten darauf, dass ein träger
+  Sensor in den Spielraum fällt; gerade die Ladeleistung eines Autos kommt oft
+  aus der Cloud. Meldet das Auto ausdrücklich, dass es nicht steckt, bleibt es
+  draußen. Abschaltbar über `car_match_unique`.
+
+### Geändert
+
+* **Zwei Ladespalten hängen jetzt an einem gemeinsamen Strang**, der sich erst
+  kurz über den Wallboxen gabelt. Vorher liefen zwei getrennte Linien vom
+  Verteilknoten bis dorthin fast deckungsgleich nebeneinander – das sah nach
+  Fehler aus, nicht nach zwei Wegen. Der Strang trägt beide Ladeleistungen.
+
 ### Behoben
 
+* **Ein Auto, das seine Wallbox nannte, konnte an einer anderen landen.** War
+  der gewählte Platz schon belegt, warf die Suche es einfach woanders hin.
+  „Hängt an dieser Wallbox" heißt aber nicht „notfalls auch an einer anderen".
 * **Zwei Eingaben nacheinander im selben Formular – die erste ging verloren.**
   Das steckte mindestens seit 1.5.1 in jeder Fassung – nachgeprüft an 1.5.1
   und 1.6.1; ältere liegen nicht mehr vor. Damit beim Tippen der Eingabefokus
@@ -284,8 +301,8 @@ Erste Veröffentlichung.
   hohe, schmale Flächen ausgelegt.
 * Reine Anzeige, es lässt sich nichts steuern.
 
-[Unveröffentlicht]: https://github.com/thomansky/power-flow-card-plus-mobile/compare/v1.7.0-beta.3...HEAD
-[1.7.0]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.7.0-beta.3
+[Unveröffentlicht]: https://github.com/thomansky/power-flow-card-plus-mobile/compare/v1.7.0-beta.4...HEAD
+[1.7.0]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.7.0-beta.4
 [1.6.1]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.6.1
 [1.6.0]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.6.0
 [1.5.1]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.5.1

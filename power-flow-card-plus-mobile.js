@@ -262,9 +262,20 @@ function buildNodes(nBat, spalten, autos, nQuellen, aspect) {
   const yCar = Math.min(0.905, 1 - (0.092 + 0.02) * aspect);
   const yWb = Math.min(0.740, yCar - (0.092 + WB_RADIUS + LUFT) * aspect);
 
+  const yLade = autos.some(Boolean) ? yWb : 0.740;
   for (let i = 0; i < spalten; i++) {
-    N["wb" + (i + 1)] = { x: x(i), y: autos.some(Boolean) ? yWb : 0.740, r: WB_RADIUS };
+    N["wb" + (i + 1)] = { x: x(i), y: yLade, r: WB_RADIUS };
     if (autos[i]) N["car" + (i + 1)] = { x: x(i), y: yCar, r: 0.092 };
+  }
+
+  // Zwei Ladespalten hängen an einem gemeinsamen Strang, der sich erst kurz
+  // über ihnen gabelt. Zwei getrennte Linien liefen von hier bis dort fast
+  // deckungsgleich nebeneinander – das sah nach Fehler aus, nicht nach zwei
+  // Wegen. Der Punkt liegt mittig zwischen Verteilknoten und Wallboxreihe:
+  // unter dem Zuhause-Kreis hindurch, über den Wallboxen. Er wird nie
+  // gezeichnet, deshalb Radius null.
+  if (spalten === 2) {
+    N.wbGabel = { x: LADE_MITTE, y: (yDist + yLade) / 2, r: 0 };
   }
   return N;
 }
@@ -296,10 +307,13 @@ function buildLinks(N, nQuellen) {
     { id: "house", from: "busDist", to: "house", fa: 0, fx: "h", ta: 180, tx: "h" },
     { id: "bat1", from: "battery1", to: "busDist", fa: 0, fx: "h", ta: 150, tx: "v" },
     { id: "bat2", from: "battery2", to: "busDist", fa: 0, fx: "h", ta: 120, tx: "v" },
-    // Spiegelbildliche Winkel: gerade herunter, ein Knick nach außen, weiter
-    // herunter. Bei nur einer Spalte geht es senkrecht durch.
-    { id: "wb1", from: "busDist", to: "wb1", fa: zwei ? 60 : 90, fx: "v", ta: 270, tx: "v" },
-    { id: "wb2", from: "busDist", to: "wb2", fa: 30, fx: "v", ta: 270, tx: "v" },
+    // Bei zwei Spalten führt ein Strang vom Verteilknoten herunter und gabelt
+    // sich erst über den Wallboxen. Bei einer geht es senkrecht durch.
+    { id: "wbStamm", from: "busDist", to: "wbGabel", fa: 60, fx: "v", ta: 180, tx: "h" },
+    zwei
+      ? { id: "wb1", from: "wbGabel", to: "wb1", fa: 180, fx: "h", ta: 270, tx: "v" }
+      : { id: "wb1", from: "busDist", to: "wb1", fa: 90, fx: "v", ta: 270, tx: "v" },
+    { id: "wb2", from: "wbGabel", to: "wb2", fa: 0, fx: "h", ta: 270, tx: "v" },
     // Auto hängt senkrecht unter seiner Wallbox.
     { id: "car1", from: "wb1", to: "car1", fa: 90, fx: "v", ta: 270, tx: "v" },
     { id: "car2", from: "wb2", to: "car2", fa: 90, fx: "v", ta: 270, tx: "v" },
@@ -585,6 +599,9 @@ class PowerflowPlusMobileCard extends HTMLElement {
       // Wie stark die beiden Leistungen abweichen dürfen, als Anteil.
       car_match_tolerance:
         Number.isFinite(config.car_match_tolerance) ? config.car_match_tolerance : 0.25,
+      // Bleibt am Ende genau eine Wallbox offen und genau ein Auto frei,
+      // gehören die beiden zusammen – ohne weitere Prüfung.
+      car_match_unique: config.car_match_unique !== false,
       icons: config.icons ?? null,
       // Vorzeichen: je nach Integration unterschiedlich. Voreinstellung ist
       // "Netzbezug positiv" und "Batterie laden positiv".
@@ -788,10 +805,16 @@ class PowerflowPlusMobileCard extends HTMLElement {
     const belegt = new Set(Object.values(this._paare));
     const vonHand = new Set(c.wallboxes.map((w) => w.car).filter(Boolean));
     const fest = this._festeAutos(c);
-    const festeAutos = new Set(Object.values(fest));
+    // Wer eine vorhandene Wallbox nennt, ist gesprochen – auch wenn er sie
+    // nicht bekommt, weil dort schon jemand steht. "Hängt an dieser Wallbox"
+    // heißt nicht "notfalls auch an einer anderen".
+    const mitWahl = new Set(
+      c.cars.map((a, i) => (a.wallbox != null && c.wallboxes[a.wallbox - 1] ? i : -1))
+        .filter((i) => i >= 0)
+    );
     const freieAutos = c.cars
       .map((x, i) => ({ ...x, i }))
-      .filter((x) => !belegt.has(x.i) && !festeAutos.has(x.i) && !vonHand.has(x.soc));
+      .filter((x) => !belegt.has(x.i) && !mitWahl.has(x.i) && !vonHand.has(x.soc));
     const offene = c.wallboxes
       .map((w, i) => ({ ...w, i }))
       .filter((w) => !w.car && fest[w.i] === undefined && this._paare[w.i] === undefined)
@@ -851,6 +874,27 @@ class PowerflowPlusMobileCard extends HTMLElement {
     suche(0, new Set(belegt), [], 0, 0);
 
     for (const p of bestWahl || []) this._paare[p.wb] = p.auto;
+
+    // Bleibt genau eine Wallbox offen und genau ein Auto frei, gehören die
+    // beiden zusammen – wer sonst? Dann ist keine Note nötig. Das erspart das
+    // Warten darauf, dass ein träger Sensor endlich in den Spielraum fällt;
+    // gerade die Ladeleistung eines Autos kommt oft aus der Cloud und hinkt
+    // Minuten hinterher.
+    //
+    // Hier gilt "lieber kein Auto als das falsche" bewusst nicht mehr: es
+    // gibt schlicht keine zweite Möglichkeit. Nur wenn das Auto ausdrücklich
+    // meldet, dass es nicht steckt, bleibt es draußen – dann steht es
+    // woanders. Abschaltbar über car_match_unique.
+    if (c.car_match_unique) {
+      const vergeben = new Set(Object.values(this._paare));
+      const nochOffen = offene.filter((w) => this._paare[w.i] === undefined);
+      const nochFrei = freieAutos.filter((a) => !vergeben.has(a.i));
+      if (nochOffen.length === 1 && nochFrei.length === 1 &&
+          steckt(nochFrei[0].plug) !== false) {
+        this._paare[nochOffen[0].i] = nochFrei[0].i;
+      }
+    }
+
     return this._paare;
   }
 
@@ -1414,6 +1458,14 @@ class PowerflowPlusMobileCard extends HTMLElement {
         put(`car${i + 1}`, Math.max(0, z(w.power)), PAL.car[i % PAL.car.length]);
       }
     });
+    // Der gemeinsame Strang trägt beide Ladeleistungen und bekommt die Farbe
+    // der stärkeren – stehen alle Wallboxen auf einer Farbe, was die Vorgabe
+    // ist, macht das ohnehin keinen Unterschied.
+    if (aktiv.length === 2) {
+      put("wbStamm",
+        aktiv.reduce((a, w) => a + Math.max(0, z(w.power)), 0),
+        PAL.wb[aktiv[0].index % PAL.wb.length]);
+    }
 
     // ---------------------------------------------------------- Linien
     L.forEach((link) => {
@@ -1853,6 +1905,7 @@ const LABELS = {
   car_match: "Auto selbst zuordnen",
   car_match_window: "Steckerzeitpunkte dürfen auseinanderliegen (s)",
   car_match_tolerance: "Leistungen dürfen abweichen (%)",
+  car_match_unique: "Bleibt nur eins übrig, sofort zuordnen",
   car_name: "Auto – Name",
   car_icon: "Auto – Symbol",
   color: "Farbe",
@@ -1898,6 +1951,11 @@ const HELFER = {
     "Die Wallbox misst am Kabel, das Auto hinter dem Laderegler. Ein Rest " +
     "Unterschied bleibt immer. Passt nichts, wird lieber kein Auto " +
     "gezeigt als das falsche.",
+  car_match_unique:
+    "Ist am Ende nur noch eine Wallbox offen und ein Auto frei, gehören die " +
+    "beiden zusammen – ohne auf Stecker oder Leistung zu warten. Ausschalten, " +
+    "wenn öfter ein Auto nicht zu Hause ist: dann könnte es dem falschen " +
+    "Kabel zugeschlagen werden.",
 };
 const computeHelper = (s) => HELFER[s.name];
 
@@ -2026,6 +2084,7 @@ function toForm(cfg) {
   f.car_match_tolerance = Math.round(
     (Number.isFinite(c.car_match_tolerance) ? c.car_match_tolerance : 0.25) * 100
   );
+  f.car_match_unique = c.car_match_unique !== false;
   return f;
 }
 
@@ -2043,6 +2102,9 @@ function fromForm(d, cfg) {
     neu.car_match === "power" && Number.isFinite(d.car_match_tolerance) && d.car_match_tolerance !== 25
       ? d.car_match_tolerance / 100
       : undefined;
+  // true ist die Vorgabe und muss nicht in der Konfiguration stehen.
+  neu.car_match_unique =
+    neu.car_match && d.car_match_unique === false ? false : undefined;
 
   neu.title = d.title || undefined;
   neu.pv = d.pv || undefined;
@@ -2201,6 +2263,9 @@ const LISTEN_SCHEMA = {
       ? [{ name: "car_match_tolerance",
            selector: { number: { min: 1, max: 90, step: 1, mode: "box",
                                  unit_of_measurement: "%" } } }]
+      : []),
+    ...(d.car_match !== "off"
+      ? [{ name: "car_match_unique", selector: { boolean: {} } }]
       : []),
   ],
 };
