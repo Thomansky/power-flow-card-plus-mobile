@@ -198,7 +198,7 @@ colors:
 | `transparent` | `false` | Kartenhintergrund durchscheinen lassen. Text und Kacheln folgen dann dem Thema. |
 | `house_mix` | `true` | Ring ums Haus nach Herkunft des Stroms einfärben |
 | `car_mix` | `true` | Zweiter Ring im Auto nach Herkunft, solange geladen wird |
-| `autarky_mix` | `true` | Autarkie-Balken nach Herkunft färben statt einfarbig |
+| `autarky_mix` | `true` | Autarkie-Balken nach Herkunft färben. Gilt nur, wenn die Karte selbst rechnet – siehe unten. |
 | `min_height` | `460` | Wunschhöhe des Graphen in Pixeln |
 | `title` | `Energiefluss` | Überschrift |
 
@@ -395,6 +395,26 @@ Unterschied bleibt immer, deshalb sind 25 % Abweichung erlaubt
   nimmt die sicherste Paarung ein Auto weg, das anderswo das einzig mögliche war.
 * Ohne `car_match` ändert sich nichts: die Autoliste wird dann wie bisher der
   Reihe nach den Wallboxen zugeteilt.
+
+---
+
+## Der Autarkie-Balken
+
+Die Farben im Balken zeigen die Mischung von **jetzt**: welcher Anteil der
+Zufuhr gerade aus welcher Quelle kommt, das Netz ausgenommen – Autarkie ist ja
+gerade der Anteil ohne Netzbezug.
+
+Das passt aber nur zu einer Zahl, die auch von jetzt ist – also zur eigenen
+Rechnung der Karte. **Kommt die Zahl aus einem eigenen `autarky`-Sensor, bleibt
+der Balken einfarbig.** Solche Sensoren rechnen fast immer über den Tag; abends
+stünde sonst ein Tageswert vollständig in der Farbe des Speichers, der gerade
+liefert, obwohl der Tag über die Sonne lief. Länge und Farben hätten zwei
+verschiedene Zeiträume, und das Bild behauptete etwas, das die Karte nicht
+wissen kann.
+
+Ist der Sensor gerade nicht lesbar, rechnet die Karte selbst – dann passen
+Länge und Farben wieder zusammen, und der Balken wird wieder eingefärbt. Am
+`≈` vor der Zahl ist das zu erkennen.
 
 ---
 

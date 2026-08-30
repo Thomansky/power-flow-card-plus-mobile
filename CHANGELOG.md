@@ -74,6 +74,18 @@ die Versionsnummern [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Behoben
 
+* **Der Autarkie-Balken färbte einen Tageswert mit den Farben von jetzt.** Die
+  Farben zeigen, welcher Anteil der Zufuhr **gerade** aus welcher Quelle kommt.
+  Das passt nur zu einer Zahl, die auch von jetzt ist – also zur eigenen
+  Rechnung der Karte. Ein eigener `autarky`-Sensor rechnet aber fast immer über
+  den Tag: abends stand dort ein Tageswert vollständig in der Farbe des
+  Speichers, der gerade liefert, obwohl der Tag über die Sonne lief. Länge und
+  Farben hatten zwei verschiedene Zeiträume.
+
+  Kommt die Zahl aus einem Sensor, bleibt der Balken jetzt einfarbig. Ist der
+  Sensor nicht lesbar und die Karte rechnet selbst, wird wieder eingefärbt –
+  dann stimmen die Zeiträume wieder überein.
+
 * **Ein hinterlegter, aber unlesbarer Sensor sah aus wie ein Messwert.** Ist
   `autarky` oder `self_consumption` gesetzt, der Sensor aber gerade nicht
   lesbar, rechnet die Karte weiter selbst – das war so gewollt, aber sie sagte
@@ -318,8 +330,8 @@ Erste Veröffentlichung.
   hohe, schmale Flächen ausgelegt.
 * Reine Anzeige, es lässt sich nichts steuern.
 
-[Unveröffentlicht]: https://github.com/thomansky/power-flow-card-plus-mobile/compare/v1.7.0-beta.6...HEAD
-[1.7.0]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.7.0-beta.6
+[Unveröffentlicht]: https://github.com/thomansky/power-flow-card-plus-mobile/compare/v1.7.0-beta.7...HEAD
+[1.7.0]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.7.0-beta.7
 [1.6.1]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.6.1
 [1.6.0]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.6.0
 [1.5.1]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.5.1

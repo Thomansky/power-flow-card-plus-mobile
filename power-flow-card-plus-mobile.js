@@ -1070,6 +1070,9 @@ class PowerflowPlusMobileCard extends HTMLElement {
     // weiter – aber sie sagt es. Sonst steht dort eine Schätzung, die wie ein
     // Messwert aussieht, und niemand kommt darauf, dass der Sensor fehlt.
     const autarkyErsatz = !!c.autarky && autarkySensor == null;
+    // Kommt die Zahl aus einem eigenen Sensor, weiß die Karte nicht, über
+    // welchen Zeitraum er rechnet.
+    const autarkyGemessen = autarkySensor != null;
     const autarky =
       autarkySensor != null
         ? autarkySensor / 100
@@ -1118,7 +1121,7 @@ class PowerflowPlusMobileCard extends HTMLElement {
       wallboxTotal,
       gridImport, gridExport,
       consumption,
-      autarky, selfConsumption, autarkyErsatz, selfErsatz,
+      autarky, selfConsumption, autarkyErsatz, selfErsatz, autarkyGemessen,
       durchsatz,
       houseMix,
     };
@@ -1800,7 +1803,14 @@ class PowerflowPlusMobileCard extends HTMLElement {
       // Mischung nicht exakt zusammen. Dann werden die Anteile auf die
       // gemessene Länge gestreckt: die Zahl bleibt die gemessene, die Farben
       // zeigen weiterhin das Verhältnis.
-      const ohneNetz = c.autarky_mix && mischung
+      // Die Farben zeigen die Mischung von **jetzt**. Das passt nur zu einer
+      // Zahl, die auch von jetzt ist – also zur eigenen Rechnung der Karte.
+      // Kommt sie aus einem eigenen Sensor, ist sie meist ein Tageswert:
+      // abends stünde dann ein Tageswert vollständig in der Farbe des
+      // Speichers, der gerade liefert, obwohl der Tag über die Sonne lief.
+      // Länge und Farben hätten zwei verschiedene Zeiträume. Dann lieber
+      // einfarbig – lieber keine Aussage als eine falsche.
+      const ohneNetz = c.autarky_mix && !v.autarkyGemessen && mischung
         ? mischung.filter((s) => s.color !== mixFarbe.grid)
         : null;
       const autarkieStuecke = ohneNetz && ohneNetz.length
