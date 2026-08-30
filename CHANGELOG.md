@@ -48,6 +48,16 @@ die Versionsnummern [Semantic Versioning](https://semver.org/lang/de/).
   zugeordnet wird.
 * **Wallboxen haben ein Feld für den Steckerzustand** (`plug`).
 
+* **Eine fünfte Erzeugungsquelle.** Die oberste Reihe fasst jetzt fünf Kreise.
+  Die beiden äußeren laufen dabei seitlich in den Sammelknoten statt von oben:
+  fächerten alle fünf über den oberen Bogen auf, lägen die waagerechten Stücke
+  der äußeren und der inneren nur rund sieben Pixel übereinander – im Bild sähe
+  das aus wie eine ausgefranste Linie, nicht wie zwei Wege. Gemessen wird das
+  jetzt, in drei Formaten.
+
+  Dazu eine fünfte Vorgabefarbe und ein fünftes Vorgabesymbol; vorher wiederholte
+  sich ab der fünften die Farbe der ersten.
+
 * **Bleibt nur eins übrig, wird sofort zugeordnet.** Ist am Ende genau eine
   Wallbox offen und genau ein Auto frei, gehören die beiden zusammen – dafür
   braucht es keine Prüfung mehr. Das erspart das Warten darauf, dass ein träger
@@ -308,8 +318,8 @@ Erste Veröffentlichung.
   hohe, schmale Flächen ausgelegt.
 * Reine Anzeige, es lässt sich nichts steuern.
 
-[Unveröffentlicht]: https://github.com/thomansky/power-flow-card-plus-mobile/compare/v1.7.0-beta.5...HEAD
-[1.7.0]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.7.0-beta.5
+[Unveröffentlicht]: https://github.com/thomansky/power-flow-card-plus-mobile/compare/v1.7.0-beta.6...HEAD
+[1.7.0]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.7.0-beta.6
 [1.6.1]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.6.1
 [1.6.0]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.6.0
 [1.5.1]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.5.1

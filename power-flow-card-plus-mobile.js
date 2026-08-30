@@ -31,7 +31,7 @@ const C = {
   batterie: "#FF3B30",
   // Erzeugungsquellen. Die ersten beiden sind bewusst die alten Farben von
   // pv und external, damit bestehende Karten unverändert aussehen.
-  quellen: ["#FFC300", "#FF5A2D", "#8AD94F", "#35D0FF"],
+  quellen: ["#FFC300", "#FF5A2D", "#8AD94F", "#35D0FF", "#B27BFF"],
 };
 
 /**
@@ -44,8 +44,13 @@ const VORGABE = {
 };
 
 /** Voreinstellungen je Erzeugungsquelle, wenn nichts angegeben ist. */
-const QUELL_NAME = ["Sonne", "Zweite Quelle", "Dritte Quelle", "Vierte Quelle"];
-const QUELL_ICON = ["mdi:solar-power", "mdi:solar-power-variant", "mdi:wind-turbine", "mdi:engine"];
+const QUELL_NAME = [
+  "Sonne", "Zweite Quelle", "Dritte Quelle", "Vierte Quelle", "Fünfte Quelle",
+];
+const QUELL_ICON = [
+  "mdi:solar-power", "mdi:solar-power-variant", "mdi:wind-turbine",
+  "mdi:engine", "mdi:water-pump",
+];
 
 /** Ladestandsabhängige Farbe: rot bei leer, grün bei voll. */
 function socColor(soc) {
@@ -203,6 +208,8 @@ const QUELL_REIHE = [
   [{ x: 0.13, r: 0.108 }, { x: 0.5, r: 0.108 }, { x: 0.87, r: 0.108 }],
   [{ x: 0.115, r: 0.088 }, { x: 0.372, r: 0.088 },
    { x: 0.628, r: 0.088 }, { x: 0.885, r: 0.088 }],
+  [{ x: 0.095, r: 0.070 }, { x: 0.2975, r: 0.070 }, { x: 0.5, r: 0.070 },
+   { x: 0.7025, r: 0.070 }, { x: 0.905, r: 0.070 }],
 ];
 
 /**
@@ -212,8 +219,8 @@ const QUELL_REIHE = [
 const LUFT = 0.045;
 
 function buildNodes(nBat, spalten, autos, nQuellen, aspect) {
-  const reihe = QUELL_REIHE[Math.min(4, nQuellen)] || [];
-  const ziele = QUELL_ZIEL[Math.min(4, nQuellen)] || [];
+  const reihe = QUELL_REIHE[Math.min(5, nQuellen)] || [];
+  const ziele = QUELL_ZIEL[Math.min(5, nQuellen)] || [];
 
   // Die Kreise hängen an der Breite, die Abstände an der Höhe. Auf einer
   // breiten Fläche wachsen also die Kreise, während der Weg zwischen ihnen
@@ -292,11 +299,17 @@ const QUELL_ZIEL = [
   [{ ta: 200, tx: "v" }, { ta: 270, tx: "v" }, { ta: 340, tx: "v" }],
   [{ ta: 205, tx: "v" }, { ta: 245, tx: "v" },
    { ta: 295, tx: "v" }, { ta: 335, tx: "v" }],
+  // Bei fünf laufen die beiden äußeren seitlich in den Knoten, wie bei zwei.
+  // Fächerten alle fünf über den oberen Bogen auf, lägen die waagerechten
+  // Stücke der äußeren und der inneren nur wenige Pixel übereinander – im
+  // Bild sähe das aus wie eine ausgefranste Linie, nicht wie zwei Wege.
+  [{ ta: 180, tx: "h" }, { ta: 215, tx: "v" }, { ta: 270, tx: "v" },
+   { ta: 325, tx: "v" }, { ta: 0, tx: "h" }],
 ];
 
 function buildLinks(N, nQuellen) {
   const zwei = !!N.wb2;
-  const ziele = QUELL_ZIEL[Math.min(4, nQuellen)] || [];
+  const ziele = QUELL_ZIEL[Math.min(5, nQuellen)] || [];
   const all = [
     ...ziele.map((z, i) => ({
       id: "src" + (i + 1), from: "src" + (i + 1), to: "busGen",
@@ -517,8 +530,8 @@ class PowerflowPlusMobileCard extends HTMLElement {
           alt: o._alt,
         };
       });
-    if (quellen.length > 4) {
-      throw new Error("Es lassen sich höchstens vier Erzeugungsquellen einrichten.");
+    if (quellen.length > 5) {
+      throw new Error("Es lassen sich höchstens fünf Erzeugungsquellen einrichten.");
     }
 
     this._config = {
@@ -1328,15 +1341,15 @@ class PowerflowPlusMobileCard extends HTMLElement {
     const quellListe = (o, a, b) => (o && (o[a] || o[b])) || [];
     const quellFarbe = (i) => {
       const q = c.sources[i] || {};
-      if (q.color) return toColor(q.color, C.quellen[i % 4], this);
+      if (q.color) return toColor(q.color, C.quellen[i % C.quellen.length], this);
       const liste = quellListe(c.colors, "sources", "quellen");
-      if (liste[i]) return toColor(liste[i], C.quellen[i % 4], this);
+      if (liste[i]) return toColor(liste[i], C.quellen[i % C.quellen.length], this);
       // Die ersten beiden Quellen tragen dieselbe Vorgabe wie früher pv und
       // external – gleich, ob sie aus der alten oder der neuen Schreibweise
       // stammen.
       if (i === 0) return PAL.pv;
       if (i === 1) return PAL.ext;
-      return toColor(C.quellen[i % 4], C.quellen[i % 4], this);
+      return toColor(C.quellen[i % C.quellen.length], C.quellen[i % C.quellen.length], this);
     };
     const quellIcon = (i) => {
       const q = c.sources[i] || {};
@@ -1345,7 +1358,7 @@ class PowerflowPlusMobileCard extends HTMLElement {
       if (liste[i]) return liste[i];
       if (q.alt === 0) return IC.pv;
       if (q.alt === 1) return IC.external;
-      return QUELL_ICON[i % 4];
+      return QUELL_ICON[i % QUELL_ICON.length];
     };
     const svg = this.shadowRoot.querySelector("#graph");
     const slot = svg.parentElement;
@@ -2285,7 +2298,7 @@ const LISTEN_SCHEMA = {
 
 const KIND = {
   sources: {
-    label: "Quelle", max: 4,
+    label: "Quelle", max: 5,
     toForm: (x) => ({
       name: x.name, icon: x.icon, color: x.color,
       power_sources: alsListe(x.power),
@@ -2615,7 +2628,7 @@ class PowerflowPlusMobileEditor extends HTMLElement {
     switch (id) {
       case "sources": {
         const n = quellenAus(c).length;
-        return n ? n + " von 4" : "keine";
+        return n ? n + " von 5" : "keine";
       }
       case "house": return kurz(c.house);
       case "grid": return istPaar(c.grid) ? "zwei Sensoren" : kurz(c.grid);

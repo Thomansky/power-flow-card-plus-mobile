@@ -175,7 +175,7 @@ colors:
 
 | Feld | Vorgabe | Bedeutung |
 |---|---|---|
-| `sources` | `[]` | Bis zu vier Erzeugungsquellen. Je `power` (auch Liste), `name`, `icon`, `color`. |
+| `sources` | `[]` | Bis zu fünf Erzeugungsquellen. Je `power` (auch Liste), `name`, `icon`, `color`. |
 | `pv`, `external` | – | Ältere Schreibweise, wird auf die ersten beiden Quellen abgebildet. |
 | `grid` | – | Netzleistung, positiv = Bezug. Auch als Paar `consumption`/`production`. |
 | `house` | – | Hausverbrauch gesamt |
@@ -209,9 +209,12 @@ und der Reihe nach den Wallboxen zugeordnet.
 
 ## Erzeugung
 
-Bis zu vier Quellen lassen sich einrichten – Dachflächen, ein zweiter
-Wechselrichter, Wind, ein Blockheizkraftwerk. Sie stehen nebeneinander in der
-obersten Reihe und laufen alle im Sammelknoten zusammen.
+Bis zu fünf Quellen lassen sich einrichten – Dachflächen, ein zweiter
+Wechselrichter, Wind, ein Blockheizkraftwerk, ein Wasserrad. Sie stehen
+nebeneinander in der obersten Reihe und laufen alle im Sammelknoten zusammen.
+Je mehr es sind, desto kleiner werden die Kreise und desto enger rücken sie
+zusammen; bei fünf laufen die beiden äußeren seitlich in den Knoten statt von
+oben, sonst lägen ihre Wege zu dicht an denen der inneren.
 
 ```yaml
 sources:
@@ -250,7 +253,7 @@ ist nichts zu ändern.
 Der Ring um den Hausknoten ist nicht einfarbig, sondern in Bögen geteilt — einer
 je Quelle, in deren eigener Farbe. Ziehst Du gerade 10 kW aus der Sonne und
 10 kW aus dem Speicher, ist der Kreis halb gelb und halb in der Speicherfarbe.
-Bis zu vier Bögen sind möglich: Sonne, zweite Quelle, Speicher, Netzbezug.
+Je Quelle ein Bogen, dazu Speicher und Netzbezug.
 
 Wie die Anteile zustande kommen, ist wichtig zu wissen: Die Karte nimmt an, dass
 das Haus aus **derselben Mischung schöpft wie die Anlage insgesamt**. Sie teilt
