@@ -5,7 +5,19 @@ die Versionsnummern [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unveröffentlicht]
 
-## [1.7.0] – 2026-08-27
+## [1.7.1] – 2026-08-31
+
+### Entfernt
+
+* **Die Einfärbung des Autarkie-Balkens nach Herkunft** (`autarky_mix`, seit
+  1.6.0) ist wieder heraus. Sie zeigte die Mischung von **jetzt**, während die
+  Zahl daneben meist aus einem Sensor kommt, der über den **Tag** rechnet –
+  zwei Zeiträume in einem Balken. In 1.7.0-beta.7 hatte ich das noch
+  auszubalancieren versucht, indem die Färbung nur bei eigener Rechnung greift.
+  Das ist eine Regel, die man sich merken muss, für einen Nutzen, der klein
+  ist. Der Balken ist jetzt schlicht einfarbig und zeigt den Wert der
+  hinterlegten Entität. Die Einstellung in bestehenden Konfigurationen wird
+  stillschweigend ignoriert.
 
 ### Neu
 
@@ -48,6 +60,13 @@ die Versionsnummern [Semantic Versioning](https://semver.org/lang/de/).
   zugeordnet wird.
 * **Wallboxen haben ein Feld für den Steckerzustand** (`plug`).
 
+* **Antippen zeigt jetzt auch bei den Erzeugungsquellen den Wert.** Der Griff
+  dafür las die Sensorangabe als Paar aus Bezug und Einspeisung, wie es Netz
+  und Speicher haben. Bei einer Quelle steht dort aber eine Zeichenkette oder
+  eine Liste – heraus kam nichts, und damit gab es gar keine Trefferfläche.
+  Jetzt versteht er alle drei Schreibweisen; bei mehreren Sensoren je Quelle
+  öffnet sich der erste.
+
 * **Vorzeichen je Quelle umdrehbar.** Manche Wechselrichter melden ihre
   Erzeugung negativ. `invert: true` je Eintrag dreht den Wert um, im Editor
   „Vorzeichen umdrehen" – statt am Sensor herumzubauen.
@@ -78,24 +97,18 @@ die Versionsnummern [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Geändert
 
+* **Der Abzweig zur linken Ladespalte läuft nicht mehr zurück.** Der
+  gemeinsame Strang gabelte sich mittig zwischen beiden Spalten, der linke Ast
+  musste also wieder nach links zurück. Jetzt läuft der Strang einmal nach
+  rechts durch, setzt unterwegs den Abzweig zur linken Spalte und endet an der
+  rechten – eine Linie mit einem Abzweig statt einer Gabel mit Rückweg.
+
 * **Zwei Ladespalten hängen jetzt an einem gemeinsamen Strang**, der sich erst
   kurz über den Wallboxen gabelt. Vorher liefen zwei getrennte Linien vom
   Verteilknoten bis dorthin fast deckungsgleich nebeneinander – das sah nach
   Fehler aus, nicht nach zwei Wegen. Der Strang trägt beide Ladeleistungen.
 
 ### Behoben
-
-* **Der Autarkie-Balken färbte einen Tageswert mit den Farben von jetzt.** Die
-  Farben zeigen, welcher Anteil der Zufuhr **gerade** aus welcher Quelle kommt.
-  Das passt nur zu einer Zahl, die auch von jetzt ist – also zur eigenen
-  Rechnung der Karte. Ein eigener `autarky`-Sensor rechnet aber fast immer über
-  den Tag: abends stand dort ein Tageswert vollständig in der Farbe des
-  Speichers, der gerade liefert, obwohl der Tag über die Sonne lief. Länge und
-  Farben hatten zwei verschiedene Zeiträume.
-
-  Kommt die Zahl aus einem Sensor, bleibt der Balken jetzt einfarbig. Ist der
-  Sensor nicht lesbar und die Karte rechnet selbst, wird wieder eingefärbt –
-  dann stimmen die Zeiträume wieder überein.
 
 * **Ein hinterlegter, aber unlesbarer Sensor sah aus wie ein Messwert.** Ist
   `autarky` oder `self_consumption` gesetzt, der Sensor aber gerade nicht
@@ -341,8 +354,8 @@ Erste Veröffentlichung.
   hohe, schmale Flächen ausgelegt.
 * Reine Anzeige, es lässt sich nichts steuern.
 
-[Unveröffentlicht]: https://github.com/thomansky/power-flow-card-plus-mobile/compare/v1.7.0-beta.8...HEAD
-[1.7.0]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.7.0-beta.8
+[Unveröffentlicht]: https://github.com/thomansky/power-flow-card-plus-mobile/compare/v1.7.1...HEAD
+[1.7.1]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.7.1
 [1.6.1]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.6.1
 [1.6.0]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.6.0
 [1.5.1]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.5.1

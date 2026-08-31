@@ -8,7 +8,7 @@
  * https://github.com/thomansky/power-flow-card-plus-mobile
  */
 
-const PPM_VERSION = "1.7.0";
+const PPM_VERSION = "1.7.1";
 
 console.info(
   `%c POWER-FLOW-CARD-PLUS-MOBILE %c v${PPM_VERSION} `,
@@ -278,11 +278,17 @@ function buildNodes(nBat, spalten, autos, nQuellen, aspect) {
   // Zwei Ladespalten hängen an einem gemeinsamen Strang, der sich erst kurz
   // über ihnen gabelt. Zwei getrennte Linien liefen von hier bis dort fast
   // deckungsgleich nebeneinander – das sah nach Fehler aus, nicht nach zwei
-  // Wegen. Der Punkt liegt mittig zwischen Verteilknoten und Wallboxreihe:
-  // unter dem Zuhause-Kreis hindurch, über den Wallboxen. Er wird nie
-  // gezeichnet, deshalb Radius null.
+  // Wegen.
+  //
+  // Die Gabel sitzt über der **linken** Spalte, nicht mittig zwischen beiden:
+  // von der Mitte aus müsste der linke Ast wieder zurücklaufen, und dieses
+  // Zurücklaufen war es, was komisch aussah. So läuft der Strang einmal nach
+  // rechts durch, lässt unterwegs die linke Spalte ab und endet an der
+  // rechten – eine Linie mit einem Abzweig statt einer Gabel mit Rückweg.
+  //
+  // Der Punkt wird nie gezeichnet, deshalb Radius null.
   if (spalten === 2) {
-    N.wbGabel = { x: LADE_MITTE, y: (yDist + yLade) / 2, r: 0 };
+    N.wbGabel = { x: x(0), y: (yDist + yLade) / 2, r: 0 };
   }
   return N;
 }
@@ -636,8 +642,6 @@ class PowerflowPlusMobileCard extends HTMLElement {
       house_mix: config.house_mix !== false,
       // Dasselbe am Auto: ein zweiter Ring innen, solange es laedt.
       car_mix: config.car_mix !== false,
-      // Autarkie-Balken nach Herkunft statt einfarbig.
-      autarky_mix: config.autarky_mix !== false,
       min_height: Number.isFinite(config.min_height) ? config.min_height : 460,
       colors: config.colors ?? null,
     };
@@ -1082,9 +1086,6 @@ class PowerflowPlusMobileCard extends HTMLElement {
     // weiter – aber sie sagt es. Sonst steht dort eine Schätzung, die wie ein
     // Messwert aussieht, und niemand kommt darauf, dass der Sensor fehlt.
     const autarkyErsatz = !!c.autarky && autarkySensor == null;
-    // Kommt die Zahl aus einem eigenen Sensor, weiß die Karte nicht, über
-    // welchen Zeitraum er rechnet.
-    const autarkyGemessen = autarkySensor != null;
     const autarky =
       autarkySensor != null
         ? autarkySensor / 100
@@ -1133,7 +1134,7 @@ class PowerflowPlusMobileCard extends HTMLElement {
       wallboxTotal,
       gridImport, gridExport,
       consumption,
-      autarky, selfConsumption, autarkyErsatz, selfErsatz, autarkyGemessen,
+      autarky, selfConsumption, autarkyErsatz, selfErsatz,
       durchsatz,
       houseMix,
     };
@@ -1588,7 +1589,17 @@ class PowerflowPlusMobileCard extends HTMLElement {
 
     // Bei getrennten Sensoren gibt es keine eine Entität – fürs Antippen
     // nimmt die Karte die erste, die konfiguriert ist.
-    const erste = (ref) => (ref ? ref.single || ref.pos || ref.neg : null);
+    /**
+     * Erste Entität einer Angabe – gleich, ob Zeichenkette, Liste oder Paar.
+     * Vorher verstand das nur das Paar aus Netz und Speicher; bei einer Quelle
+     * kam null heraus, und damit fehlte die Trefferfläche zum Antippen.
+     */
+    const erste = (ref) => {
+      if (!ref) return null;
+      if (typeof ref === "string") return ref;
+      if (Array.isArray(ref)) return ref.find(Boolean) || null;
+      return ref.single || ref.pos || ref.neg || null;
+    };
 
     const drawNode = (key, o) => {
       if (!N[key]) return;
@@ -1791,7 +1802,7 @@ class PowerflowPlusMobileCard extends HTMLElement {
       drawNode(`wb${i + 1}`, {
         icon: "charger", mdi: w.icon, title: w.name, value: fmtPower(w.power),
         compact: true, tint: PAL.wb[w.index % PAL.wb.length], active: true,
-        entity: Array.isArray(roh.power) ? roh.power[0] : roh.power,
+        entity: erste(roh.power),
       });
       if (w.carSoc != null) {
         drawNode(`car${i + 1}`, {
@@ -1809,34 +1820,6 @@ class PowerflowPlusMobileCard extends HTMLElement {
     this.shadowRoot.querySelector("#total").textContent = fmtPower(v.production);
 
     if (c.show_tiles) {
-      // Der Autarkie-Balken zeigt, woher der Strom kam, der nicht aus dem Netz
-      // stammt: je Quelle ein Stück in ihrer Farbe. Autarkie ist ja gerade der
-      // Anteil ohne Netzbezug – der gefüllte Teil lässt sich also genau nach
-      // den übrigen Quellen aufteilen.
-      //
-      // Kommt die Autarkie aus einem eigenen Sensor, passen Messwert und
-      // Mischung nicht exakt zusammen. Dann werden die Anteile auf die
-      // gemessene Länge gestreckt: die Zahl bleibt die gemessene, die Farben
-      // zeigen weiterhin das Verhältnis.
-      // Die Farben zeigen die Mischung von **jetzt**. Das passt nur zu einer
-      // Zahl, die auch von jetzt ist – also zur eigenen Rechnung der Karte.
-      // Kommt sie aus einem eigenen Sensor, ist sie meist ein Tageswert:
-      // abends stünde dann ein Tageswert vollständig in der Farbe des
-      // Speichers, der gerade liefert, obwohl der Tag über die Sonne lief.
-      // Länge und Farben hätten zwei verschiedene Zeiträume. Dann lieber
-      // einfarbig – lieber keine Aussage als eine falsche.
-      const ohneNetz = c.autarky_mix && !v.autarkyGemessen && mischung
-        ? mischung.filter((s) => s.color !== mixFarbe.grid)
-        : null;
-      const autarkieStuecke = ohneNetz && ohneNetz.length
-        ? (() => {
-            const summe = ohneNetz.reduce((a, s) => a + s.value, 0);
-            if (!summe) return null;
-            const voll = Math.min(1, Math.max(0, v.autarky ?? 0));
-            return ohneNetz.map((s) => ({ f: (s.value / summe) * voll, color: s.color }));
-          })()
-        : null;
-
       // Ein vorangestelltes ≈ heißt: der hinterlegte Sensor war nicht lesbar,
       // das hier ist die eigene Rechnung. Ohne das Zeichen sähe eine
       // Schätzung genauso aus wie ein Messwert.
@@ -1845,20 +1828,14 @@ class PowerflowPlusMobileCard extends HTMLElement {
       const pct = (f, ersatz) => (f == null ? "–" : (ersatz ? "≈" : "") + fmtPct(f));
       const tiles = [
         { label: "Autarkie", value: pct(v.autarky, v.autarkyErsatz), f: v.autarky ?? 0,
-          color: PAL.house, stuecke: autarkieStuecke, ersatz: v.autarkyErsatz },
+          color: PAL.house, ersatz: v.autarkyErsatz },
         { label: "Eigenverbrauch", value: pct(v.selfConsumption, v.selfErsatz),
           f: v.selfConsumption ?? 0, color: PAL.pv, ersatz: v.selfErsatz },
         { label: "Speicher", value: fmtSoc(v.batterySoc), f: (v.batterySoc ?? 0) / 100, color: this._batColor(v.batterySoc) },
       ];
       const balken = (t) =>
-        t.stuecke
-          ? t.stuecke
-              .map((s) =>
-                `<div class="t-fill" style="width:${(Math.min(1, Math.max(0, s.f)) * 100).toFixed(1)}%;` +
-                `background:${s.color};box-shadow:0 0 5px ${s.color}"></div>`)
-              .join("")
-          : `<div class="t-fill" style="width:${(Math.min(1, Math.max(0, t.f)) * 100).toFixed(1)}%;` +
-            `background:${t.color};box-shadow:0 0 5px ${t.color}"></div>`;
+        `<div class="t-fill" style="width:${(Math.min(1, Math.max(0, t.f)) * 100).toFixed(1)}%;` +
+        `background:${t.color};box-shadow:0 0 5px ${t.color}"></div>`;
       this.shadowRoot.querySelector("#tiles").innerHTML = tiles
         .map((t) =>
           `<div class="tile"${t.ersatz ? ` title="${ersatzHinweis}"` : ""}>` +
@@ -1977,7 +1954,6 @@ const LABELS = {
   animate: "Fluss animieren",
   house_mix: "Hauskreis nach Herkunft färben",
   car_mix: "Autokreis nach Herkunft färben",
-  autarky_mix: "Autarkie-Balken nach Herkunft färben",
   show_tiles: "Kacheln unten zeigen",
   transparent: "Durchsichtiger Hintergrund",
 };
@@ -2106,7 +2082,6 @@ function toForm(cfg) {
     animate: c.animate !== false,
     house_mix: c.house_mix !== false,
     car_mix: c.car_mix !== false,
-    autarky_mix: c.autarky_mix !== false,
     show_tiles: c.show_tiles !== false,
     transparent: !!c.transparent,
   };
@@ -2196,7 +2171,6 @@ function fromForm(d, cfg) {
   neu.animate = d.animate === false ? false : undefined;
   neu.house_mix = d.house_mix === false ? false : undefined;
   neu.car_mix = d.car_mix === false ? false : undefined;
-  neu.autarky_mix = d.autarky_mix === false ? false : undefined;
   neu.show_tiles = d.show_tiles === false ? false : undefined;
   neu.transparent = d.transparent ? true : undefined;
   return neu;
@@ -2268,7 +2242,6 @@ const SEITEN_SCHEMA = {
     { name: "animate", selector: { boolean: {} } },
     { name: "house_mix", selector: { boolean: {} } },
     { name: "car_mix", selector: { boolean: {} } },
-    { name: "autarky_mix", selector: { boolean: {} } },
     { name: "show_tiles", selector: { boolean: {} } },
     { name: "autarky", selector: SEL_ENTITY },
     { name: "self_consumption", selector: SEL_ENTITY },
