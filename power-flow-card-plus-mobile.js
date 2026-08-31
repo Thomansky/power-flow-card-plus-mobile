@@ -525,6 +525,9 @@ class PowerflowPlusMobileCard extends HTMLElement {
           name: o.name ?? QUELL_NAME[i] ?? `Quelle ${i + 1}`,
           icon: o.icon ?? null,
           color: o.color ?? null,
+          // Manche Wechselrichter melden die Erzeugung negativ. Dann hier
+          // umdrehen, statt am Sensor zu basteln.
+          invert: !!o.invert,
           // Merkt sich, ob der Eintrag aus pv/external stammt – nur dann
           // gelten die alten icons.pv/colors.pv weiter.
           alt: o._alt,
@@ -573,6 +576,10 @@ class PowerflowPlusMobileCard extends HTMLElement {
     "Einstellung unter der Liste. Was an der Wallbox selbst unter „Auto an " +
     "dieser Wallbox“ steht, schlägt beides – deshalb räumt die Karte das dort " +
     "weg, sobald hier eine Wallbox gewählt wird.",
+  invert:
+    "Anschalten, wenn der Sensor die Erzeugung negativ meldet. Zieht die " +
+    "Quelle im Bereitschaftsbetrieb, bleibt der Wert danach negativ – die " +
+    "Karte zeigt ihn dann und dreht die Flussrichtung um.",
   plug: o.plug ?? null,
           // Das Auto, das an dieser Wallbox hängt. Steht hier eins, gilt es –
           // von Hand eingetragen schlägt selbst gefunden.
@@ -978,12 +985,17 @@ class PowerflowPlusMobileCard extends HTMLElement {
     const z = (v) => (v == null ? 0 : v);
 
     // Erzeugungsquellen: mehrere Sensoren je Quelle werden addiert.
-    const sources = c.sources.map((q, i) => ({
-      index: i,
-      power: this._sum(q.power),
-      name: q.name,
-      icon: q.icon,
-    }));
+    const sources = c.sources.map((q, i) => {
+      const roh = this._sum(q.power);
+      return {
+        index: i,
+        // Negativ bleibt negativ: eine Quelle, die im Bereitschaftsbetrieb
+        // zieht statt liefert, soll das auch zeigen dürfen.
+        power: roh == null ? null : q.invert ? -roh : roh,
+        name: q.name,
+        icon: q.icon,
+      };
+    });
     const grid = this._bipolar(c.grid, c.invert_grid);
     const house = this._num(c.house);
 
@@ -1465,7 +1477,8 @@ class PowerflowPlusMobileCard extends HTMLElement {
     const z = (x) => (x == null ? 0 : x);
 
     v.sources.forEach((q, i) => {
-      put("src" + (i + 1), Math.max(0, z(q.power)), quellFarbe(i));
+      // Zieht die Quelle, läuft der Fluss zu ihr hin statt von ihr weg.
+      put("src" + (i + 1), Math.abs(z(q.power)), quellFarbe(i), z(q.power) < 0);
     });
     put("bus", v.production, PAL.bus);
     put("house", Math.max(0, z(v.house)), PAL.house);
@@ -1727,9 +1740,11 @@ class PowerflowPlusMobileCard extends HTMLElement {
         icon: i ? "panel" : "sun",
         mdi: quellIcon(i),
         title: q.name,
-        value: fmtPower(q.power == null ? null : Math.max(0, q.power)),
+        // Nicht mehr bei null abschneiden: zieht die Quelle gerade, gehört
+        // das hin. Sonst stünde dort 0 W und niemand wüsste, warum.
+        value: fmtPower(q.power),
         tint: quellFarbe(i),
-        active: z(q.power) > T,
+        active: Math.abs(z(q.power)) > T,
         entity: erste(c.sources[i].power),
       });
     });
@@ -1945,6 +1960,7 @@ const LABELS = {
   car_name: "Auto – Name",
   car_icon: "Auto – Symbol",
   color: "Farbe",
+  invert: "Vorzeichen umdrehen",
   power_sources: "Leistung",
   icon_grid: "Symbol Netz",
   icon_house: "Symbol Zuhause",
@@ -2312,6 +2328,7 @@ const KIND = {
     toForm: (x) => ({
       name: x.name, icon: x.icon, color: x.color,
       power_sources: alsListe(x.power),
+      invert: !!x.invert,
     }),
     fromForm: (d) =>
       clean({
@@ -2322,6 +2339,8 @@ const KIND = {
         power: !d.power_sources || !d.power_sources.length
           ? undefined
           : d.power_sources.length === 1 ? d.power_sources[0] : d.power_sources,
+        // false ist die Vorgabe und muss nicht in der Konfiguration stehen.
+        invert: d.invert ? true : undefined,
       }),
     schema: () => [
       { type: "grid", name: "", schema: [
@@ -2330,6 +2349,7 @@ const KIND = {
       ] },
       { name: "power_sources", selector: { entity: { ...SEL_ENTITY.entity, multiple: true } } },
       { name: "color", selector: SEL_COLOR },
+      { name: "invert", selector: { boolean: {} } },
     ],
   },
 

@@ -175,7 +175,7 @@ colors:
 
 | Feld | Vorgabe | Bedeutung |
 |---|---|---|
-| `sources` | `[]` | Bis zu fünf Erzeugungsquellen. Je `power` (auch Liste), `name`, `icon`, `color`. |
+| `sources` | `[]` | Bis zu fünf Erzeugungsquellen. Je `power` (auch Liste), `name`, `icon`, `color`, `invert`. |
 | `pv`, `external` | – | Ältere Schreibweise, wird auf die ersten beiden Quellen abgebildet. |
 | `grid` | – | Netzleistung, positiv = Bezug. Auch als Paar `consumption`/`production`. |
 | `house` | – | Hausverbrauch gesamt |
@@ -395,6 +395,30 @@ Unterschied bleibt immer, deshalb sind 25 % Abweichung erlaubt
   nimmt die sicherste Paarung ein Auto weg, das anderswo das einzig mögliche war.
 * Ohne `car_match` ändert sich nichts: die Autoliste wird dann wie bisher der
   Reihe nach den Wallboxen zugeteilt.
+
+---
+
+### Vorzeichen und Bereitschaftsbetrieb
+
+Manche Wechselrichter melden ihre Erzeugung **negativ**. Dafür gibt es je
+Quelle `invert: true` – im Editor „Vorzeichen umdrehen". Das dreht den Wert um,
+statt am Sensor herumzubauen.
+
+```yaml
+sources:
+  - name: WR 3
+    power: sensor.wr3_leistung
+    invert: true
+```
+
+**Negative Werte bleiben stehen.** Zieht eine Quelle im Bereitschaftsbetrieb ein
+paar Watt, statt zu liefern, zeigt die Karte das: der Wert am Kreis bleibt
+negativ, und die Linie läuft zur Quelle hin statt von ihr weg. Vorher wurde bei
+null abgeschnitten – dort stand dann `0 W` und niemand wusste, warum.
+
+In die **Erzeugung** zählt eine ziehende Quelle nicht mit; der Sammelknoten
+summiert nur, was tatsächlich hereinkommt. Im Ring ums Haus taucht sie
+ebenfalls nicht auf – sie ist ja gerade keine Quelle.
 
 ---
 

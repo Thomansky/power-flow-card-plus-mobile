@@ -48,6 +48,17 @@ die Versionsnummern [Semantic Versioning](https://semver.org/lang/de/).
   zugeordnet wird.
 * **Wallboxen haben ein Feld für den Steckerzustand** (`plug`).
 
+* **Vorzeichen je Quelle umdrehbar.** Manche Wechselrichter melden ihre
+  Erzeugung negativ. `invert: true` je Eintrag dreht den Wert um, im Editor
+  „Vorzeichen umdrehen" – statt am Sensor herumzubauen.
+
+* **Negative Werte bei Quellen bleiben stehen.** Zieht eine Quelle im
+  Bereitschaftsbetrieb ein paar Watt, statt zu liefern, zeigt die Karte das
+  jetzt: der Wert am Kreis bleibt negativ, und die Linie läuft zur Quelle hin
+  statt von ihr weg. Vorher wurde bei null abgeschnitten – dort stand `0 W`
+  und nichts erklärte es. In die Erzeugung zählt eine ziehende Quelle
+  weiterhin nicht mit, und im Ring ums Haus taucht sie nicht auf.
+
 * **Eine fünfte Erzeugungsquelle.** Die oberste Reihe fasst jetzt fünf Kreise.
   Die beiden äußeren laufen dabei seitlich in den Sammelknoten statt von oben:
   fächerten alle fünf über den oberen Bogen auf, lägen die waagerechten Stücke
@@ -330,8 +341,8 @@ Erste Veröffentlichung.
   hohe, schmale Flächen ausgelegt.
 * Reine Anzeige, es lässt sich nichts steuern.
 
-[Unveröffentlicht]: https://github.com/thomansky/power-flow-card-plus-mobile/compare/v1.7.0-beta.7...HEAD
-[1.7.0]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.7.0-beta.7
+[Unveröffentlicht]: https://github.com/thomansky/power-flow-card-plus-mobile/compare/v1.7.0-beta.8...HEAD
+[1.7.0]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.7.0-beta.8
 [1.6.1]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.6.1
 [1.6.0]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.6.0
 [1.5.1]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.5.1
