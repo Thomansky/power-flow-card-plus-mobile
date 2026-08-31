@@ -8,7 +8,7 @@
  * https://github.com/thomansky/power-flow-card-plus-mobile
  */
 
-const PPM_VERSION = "1.7.2";
+const PPM_VERSION = "1.7.3";
 
 console.info(
   `%c POWER-FLOW-CARD-PLUS-MOBILE %c v${PPM_VERSION} `,
@@ -224,6 +224,13 @@ const LUFT = 0.045;
  * die halbe Segmentlänge kappt – so kommt der Bogen auf seinen vollen Radius.
  */
 const WEICHE = 0.09;
+
+/**
+ * Wie weit vor dem Kreis die Linie auf die Radiale einschwenkt, als Anteil
+ * der Breite. Kurz genug, dass es nicht als eigener Knick auffällt, lang
+ * genug, dass die Kappe am Ende sauber im Rand steckt.
+ */
+const ANFAHRT = 0.028;
 
 function buildNodes(nBat, spalten, autos, nQuellen, aspect) {
   const reihe = QUELL_REIHE[Math.min(5, nQuellen)] || [];
@@ -1418,28 +1425,53 @@ class PowerflowPlusMobileCard extends HTMLElement {
 
     const P = (n) => ({ x: R.x + N[n].x * R.w, y: R.y + N[n].y * R.h });
     const RAD = (n) => N[n].r * R.w;
-    const anchor = (n, deg) => {
+    const anchor = (n, deg, davor) => {
       const rad = (deg * Math.PI) / 180;
       const p = P(n);
-      const r = RAD(n);
+      const r = RAD(n) + (davor || 0);
       return { x: p.x + Math.cos(rad) * r, y: p.y + Math.sin(rad) * r };
     };
 
+    /**
+     * Der Weg zwischen zwei Knoten, waagerecht und senkrecht geführt.
+     *
+     * Das letzte Stück läuft **radial** in den Kreis, zeigt also auf seine
+     * Mitte. Trifft eine Linie schräg auf den Rand – etwa senkrecht bei 215°
+     * –, liegt ihre runde Kappe quer zum Ring und schmiert seitlich darüber;
+     * es sieht aus wie ein aufgeklebter Fleck statt wie ein Anschluss. Radial
+     * angefahren steckt sie an jeder Stelle gleich im Rand. Wo die Anfahrt
+     * ohnehin radial ist (senkrecht oben, waagerecht seitlich), fällt der
+     * Zusatzpunkt mit der Geraden zusammen und ändert nichts.
+     *
+     * Knoten ohne Radius – die Weiche zu den Ladespalten – haben keinen Rand,
+     * an dem etwas einstecken könnte; sie bleiben unberührt.
+     */
     const waypoints = (link) => {
+      const vor = R.w * ANFAHRT;
       const s = anchor(link.from, link.fa);
       const e = anchor(link.to, link.ta);
-      if (link.fx === "v" && link.tx === "v") {
-        if (Math.abs(s.x - e.x) < 1) return [s, e];
-        const my = (s.y + e.y) / 2;
-        return [s, { x: s.x, y: my }, { x: e.x, y: my }, e];
-      }
-      if (link.fx === "h" && link.tx === "h") {
-        if (Math.abs(s.y - e.y) < 1) return [s, e];
-        const mx = (s.x + e.x) / 2;
-        return [s, { x: mx, y: s.y }, { x: mx, y: e.y }, e];
-      }
-      if (link.fx === "v") return [s, { x: s.x, y: e.y }, e];
-      return [s, { x: e.x, y: s.y }, e];
+      const sV = RAD(link.from) > 0 ? anchor(link.from, link.fa, vor) : s;
+      const eV = RAD(link.to) > 0 ? anchor(link.to, link.ta, vor) : e;
+
+      const mitte = (() => {
+        if (link.fx === "v" && link.tx === "v") {
+          if (Math.abs(sV.x - eV.x) < 1) return [];
+          const my = (sV.y + eV.y) / 2;
+          return [{ x: sV.x, y: my }, { x: eV.x, y: my }];
+        }
+        if (link.fx === "h" && link.tx === "h") {
+          if (Math.abs(sV.y - eV.y) < 1) return [];
+          const mx = (sV.x + eV.x) / 2;
+          return [{ x: mx, y: sV.y }, { x: mx, y: eV.y }];
+        }
+        if (link.fx === "v") return [{ x: sV.x, y: eV.y }];
+        return [{ x: eV.x, y: sV.y }];
+      })();
+
+      // Punkte, die aufeinanderfallen, würden nur leere Segmente erzeugen.
+      const roh = [s, sV, ...mitte, eV, e];
+      return roh.filter((p, i) =>
+        i === 0 || Math.hypot(p.x - roh[i - 1].x, p.y - roh[i - 1].y) > 0.5);
     };
 
     const roundedPath = (pts, radius) => {
@@ -1457,30 +1489,6 @@ class PowerflowPlusMobileCard extends HTMLElement {
       }
       const last = pts[pts.length - 1];
       return `${d} L ${last.x} ${last.y}`;
-    };
-
-    /**
-     * Länge desselben Weges. Die Ecken sind immer rechte Winkel, denn die
-     * Stützpunkte laufen nur waagerecht und senkrecht. Ein quadratischer
-     * Bogen über einen rechten Winkel misst 1,6231 · r – zwischen der Ecke
-     * (2 r) und dem Viertelkreis (1,5708 r), nachgerechnet über das Integral
-     * der Ableitung.
-     */
-    const pfadLaenge = (pts, radius) => {
-      if (pts.length < 2) return 0;
-      const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
-      const lerp = (a, b, t) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
-      let len = 0;
-      let von = pts[0];
-      for (let i = 1; i < pts.length - 1; i++) {
-        const p0 = pts[i - 1], p1 = pts[i], p2 = pts[i + 1];
-        const d1 = dist(p0, p1), d2 = dist(p1, p2);
-        if (d1 < 0.5 || d2 < 0.5) { len += dist(von, p1); von = p1; continue; }
-        const r = Math.min(radius, d1 / 2, d2 / 2);
-        len += dist(von, lerp(p1, p0, r / d1)) + 1.6231 * r;
-        von = lerp(p1, p2, r / d2);
-      }
-      return len + dist(von, pts[pts.length - 1]);
     };
 
     // ---------------------------------------------------- Flusszustände
@@ -1520,9 +1528,16 @@ class PowerflowPlusMobileCard extends HTMLElement {
     L.forEach((link) => {
       const st = states[link.id];
       if (!st) return;
-      const pts = waypoints(link);
-      const dPath = roundedPath(pts, R.w * 0.045);
-      const laenge = pfadLaenge(pts, R.w * 0.045);
+      const dPath = roundedPath(waypoints(link), R.w * 0.045);
+
+      // Die Länge wird am fertigen Pfad gemessen, nicht nachgerechnet. Eine
+      // eigene Rechnung müsste jede Eckenform kennen – seit die Linien radial
+      // in die Kreise laufen, sind die Ecken nicht mehr alle rechtwinklig.
+      // Dafür wird die Bahn erst angelegt und dann beschriftet.
+      const bahn = el("path", { d: dPath, fill: "none", "stroke-linecap": "round" });
+      svg.appendChild(bahn);
+      const laenge = bahn.getTotalLength();
+
       const active = st.power > 0;
       // Die Dicke sagt, wie viel fließt. Auf einem kurzen Weg darf sie das
       // aber nicht dicker sagen als ein Viertel der Weglänge – sonst bleibt
@@ -1537,15 +1552,9 @@ class PowerflowPlusMobileCard extends HTMLElement {
           ))
         : 1.6;
 
-      svg.appendChild(
-        el("path", {
-          d: dPath, fill: "none",
-          stroke: active ? st.color : "rgba(255,255,255,.12)",
-          "stroke-opacity": active ? 0.35 : 1,
-          "stroke-width": active ? lw : 1.6,
-          "stroke-linecap": "round",
-        })
-      );
+      bahn.setAttribute("stroke", active ? st.color : "rgba(255,255,255,.12)");
+      bahn.setAttribute("stroke-opacity", active ? 0.35 : 1);
+      bahn.setAttribute("stroke-width", active ? lw : 1.6);
       if (!active || !c.animate) return;
 
       // Punkte gleichmäßig verteilen: eine ganze Zahl von Perioden auf den

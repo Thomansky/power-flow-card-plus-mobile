@@ -5,6 +5,29 @@ die Versionsnummern [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unveröffentlicht]
 
+## [1.7.3] – 2026-08-31
+
+### Geändert
+
+* **Die Linien laufen jetzt radial in die Kreise**, zeigen also auf deren
+  Mitte. Vorher trafen sie an schrägen Stellen quer auf den Rand – bei fünf
+  Quellen etwa die beiden inneren, die senkrecht bei 215° und 325° ankamen.
+  Dort lag die runde Kappe quer zum Ring und schmierte seitlich darüber: es
+  sah aus wie ein aufgeklebter Fleck statt wie ein Anschluss.
+
+  Kurz vor dem Kreis schwenkt die Linie deshalb auf die Radiale ein. Wo die
+  Anfahrt ohnehin radial war – senkrecht von oben, waagerecht von der Seite –,
+  ändert sich nichts. Betroffen sind die inneren Quellen bei vier und fünf
+  Einträgen, die Speicher und der Strang zu den Ladespalten.
+
+### Behoben
+
+* **Die Länge einer Verbindung wird jetzt am Pfad gemessen statt nachgerechnet.**
+  Die eigene Rechnung setzte rechte Winkel voraus; mit der Radialanfahrt sind
+  die Ecken nicht mehr alle rechtwinklig, und das Punktraster passte nicht mehr
+  ganzzahlig auf den Weg. Gemessen stimmt es immer, und eine Annahme weniger
+  kann brechen.
+
 ## [1.7.2] – 2026-08-31
 
 ### Geändert
@@ -367,7 +390,8 @@ Erste Veröffentlichung.
   hohe, schmale Flächen ausgelegt.
 * Reine Anzeige, es lässt sich nichts steuern.
 
-[Unveröffentlicht]: https://github.com/thomansky/power-flow-card-plus-mobile/compare/v1.7.2...HEAD
+[Unveröffentlicht]: https://github.com/thomansky/power-flow-card-plus-mobile/compare/v1.7.3...HEAD
+[1.7.3]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.7.3
 [1.7.2]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.7.2
 [1.7.1]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.7.1
 [1.6.1]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.6.1
