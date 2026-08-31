@@ -5,6 +5,19 @@ die Versionsnummern [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unveröffentlicht]
 
+## [1.7.2] – 2026-08-31
+
+### Geändert
+
+* **Der Abzweig zur linken Ladespalte läuft jetzt aus der Linie heraus statt
+  im rechten Winkel abzuknicken.** Der Punkt, an dem sich die beiden Äste
+  trennen, sitzt ein Stück **vor** der Spalte – dadurch bekommt der Ast einen
+  Vorlauf, aus dem ein Bogen wird. Beide Äste laufen ein kurzes Stück
+  gemeinsam und trennen sich dann, wie bei einer Weiche.
+
+  Der Vorlauf ist genau doppelt so lang wie der Eckenradius: kürzer, und der
+  Bogen würde auf die halbe Segmentlänge gekappt und bliebe eckig.
+
 ## [1.7.1] – 2026-08-31
 
 ### Entfernt
@@ -354,7 +367,8 @@ Erste Veröffentlichung.
   hohe, schmale Flächen ausgelegt.
 * Reine Anzeige, es lässt sich nichts steuern.
 
-[Unveröffentlicht]: https://github.com/thomansky/power-flow-card-plus-mobile/compare/v1.7.1...HEAD
+[Unveröffentlicht]: https://github.com/thomansky/power-flow-card-plus-mobile/compare/v1.7.2...HEAD
+[1.7.2]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.7.2
 [1.7.1]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.7.1
 [1.6.1]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.6.1
 [1.6.0]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.6.0

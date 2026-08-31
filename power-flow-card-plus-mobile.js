@@ -8,7 +8,7 @@
  * https://github.com/thomansky/power-flow-card-plus-mobile
  */
 
-const PPM_VERSION = "1.7.1";
+const PPM_VERSION = "1.7.2";
 
 console.info(
   `%c POWER-FLOW-CARD-PLUS-MOBILE %c v${PPM_VERSION} `,
@@ -218,6 +218,13 @@ const QUELL_REIHE = [
  */
 const LUFT = 0.045;
 
+/**
+ * Vorlauf des Abzweigs zur linken Ladespalte, als Anteil der Breite. Genau
+ * doppelt so lang wie der Eckenradius (0,045 · Breite), den roundedPath auf
+ * die halbe Segmentlänge kappt – so kommt der Bogen auf seinen vollen Radius.
+ */
+const WEICHE = 0.09;
+
 function buildNodes(nBat, spalten, autos, nQuellen, aspect) {
   const reihe = QUELL_REIHE[Math.min(5, nQuellen)] || [];
   const ziele = QUELL_ZIEL[Math.min(5, nQuellen)] || [];
@@ -286,9 +293,16 @@ function buildNodes(nBat, spalten, autos, nQuellen, aspect) {
   // rechts durch, lässt unterwegs die linke Spalte ab und endet an der
   // rechten – eine Linie mit einem Abzweig statt einer Gabel mit Rückweg.
   //
+  // Der Punkt liegt ein Stück **vor** der linken Spalte, nicht genau darüber.
+  // Säße er darüber, knickte der Ast im rechten Winkel ab; so bekommt er
+  // einen Vorlauf, aus dem roundedPath einen Bogen macht – die beiden Äste
+  // laufen ein Stück gemeinsam und trennen sich dann, wie bei einer Weiche.
+  // Der Vorlauf ist doppelt so lang wie der Eckenradius, damit der Bogen
+  // seinen vollen Radius bekommt und nicht auf die halbe Strecke gekappt wird.
+  //
   // Der Punkt wird nie gezeichnet, deshalb Radius null.
   if (spalten === 2) {
-    N.wbGabel = { x: x(0), y: (yDist + yLade) / 2, r: 0 };
+    N.wbGabel = { x: x(0) - WEICHE, y: (yDist + yLade) / 2, r: 0 };
   }
   return N;
 }
