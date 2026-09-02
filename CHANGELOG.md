@@ -5,6 +5,36 @@ die Versionsnummern [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unveröffentlicht]
 
+## [1.8.0] – 2026-08-31
+
+### Neu
+
+* **Fließpunkte nach Herkunft färben** (`flow_mix`, im Editor unter
+  *Darstellung*). Normalerweise wechselt ein Punkt am Sammelknoten die Farbe:
+  oberhalb trägt er die seiner Quelle, unterhalb die des Weges. Eingeschaltet
+  behält er **seine Herkunftsfarbe bis ans Ende** – ein Weg, auf dem Sonne und
+  Speicher zusammenkommen, trägt Punkte in beiden Farben, nach Anteilen
+  verteilt.
+
+  Gezeichnet wird das als mehrere Bahnen mit demselben Punktmuster, nur
+  verschoben – je Farbe eine. Die Punkte sitzen dadurch weiterhin gleichmäßig
+  auf dem Weg und laufen im Gleichschritt; nur ihre Farbe wechselt von Punkt
+  zu Punkt. Wer am weitesten hinter seinem Anteil liegt, bekommt den nächsten
+  Punkt, damit die Farben abwechseln statt in Blöcken zu stehen.
+
+  Betroffen ist alles, was aus einem Sammelknoten **heraus**fließt. Was selbst
+  eine Herkunft **ist** – eine Quellleitung, ein entladender Speicher, ein
+  Netzbezug – behält seine eine Farbe. Vorgabe ist aus.
+
+### Behoben
+
+* **Der Hilfetext unter dem Steckerfeld erschien nie.** Er war seit
+  1.7.0-beta.2 versehentlich in den Konfigurationsblock geraten statt in die
+  Hilfetabelle – syntaktisch gültig, deshalb fiel es nicht auf. Die Karte trug
+  dadurch ein Feld `plug` mit dem Hilfetext als Wert mit sich herum. Beides ist
+  jetzt an seinem Platz, und eine Prüfung hält fest, dass in der Konfiguration
+  keine langen Texte stehen.
+
 ## [1.7.3] – 2026-08-31
 
 ### Geändert
@@ -390,7 +420,8 @@ Erste Veröffentlichung.
   hohe, schmale Flächen ausgelegt.
 * Reine Anzeige, es lässt sich nichts steuern.
 
-[Unveröffentlicht]: https://github.com/thomansky/power-flow-card-plus-mobile/compare/v1.7.3...HEAD
+[Unveröffentlicht]: https://github.com/thomansky/power-flow-card-plus-mobile/compare/v1.8.0...HEAD
+[1.8.0]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.8.0
 [1.7.3]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.7.3
 [1.7.2]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.7.2
 [1.7.1]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.7.1

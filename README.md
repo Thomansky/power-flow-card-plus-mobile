@@ -198,6 +198,7 @@ colors:
 | `transparent` | `false` | Kartenhintergrund durchscheinen lassen. Text und Kacheln folgen dann dem Thema. |
 | `house_mix` | `true` | Ring ums Haus nach Herkunft des Stroms einfärben |
 | `car_mix` | `true` | Zweiter Ring im Auto nach Herkunft, solange geladen wird |
+| `flow_mix` | `false` | Fließpunkte nach Herkunft färben, über die Knoten hinweg – siehe unten |
 | `min_height` | `460` | Wunschhöhe des Graphen in Pixeln |
 | `title` | `Energiefluss` | Überschrift |
 
@@ -244,6 +245,31 @@ external: sensor.zusatz
 Sie wird auf die ersten beiden Quellen abgebildet, samt `icons.pv`,
 `icons.external`, `colors.pv` und `colors.external`. An bestehenden Karten
 ist nichts zu ändern.
+
+---
+
+## Fließpunkte nach Herkunft
+
+Normalerweise wechselt ein Punkt am Sammelknoten die Farbe: oberhalb trägt er
+die seiner Quelle, unterhalb die des Weges. Mit `flow_mix: true` behält er
+**seine Herkunftsfarbe bis ans Ende**. Ein Weg, auf dem Sonne und Speicher
+zusammenkommen, trägt dann Punkte in beiden Farben, nach Anteilen verteilt.
+
+```yaml
+flow_mix: true
+```
+
+Betroffen ist alles, was aus einem Sammelknoten **heraus**fließt: der Weg
+zwischen den beiden Knoten, zum Haus, zu den Wallboxen und Autos, zu einem
+ladenden Speicher und in die Einspeisung. Was selbst eine Herkunft **ist** –
+eine Quellleitung, ein entladender Speicher, ein Netzbezug – behält seine eine
+Farbe.
+
+Die Aufteilung ist dieselbe wie beim Ring ums Haus: eine Aufteilung nach
+Einspeisung, keine Messung. Wer eine Kilowattstunde genau einer Quelle
+zuordnen will, bräuchte Messungen, die es in dieser Form nicht gibt.
+
+Vorgabe ist `false` – ohne die Einstellung ändert sich nichts.
 
 ---
 

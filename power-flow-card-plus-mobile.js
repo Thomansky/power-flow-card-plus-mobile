@@ -8,7 +8,7 @@
  * https://github.com/thomansky/power-flow-card-plus-mobile
  */
 
-const PPM_VERSION = "1.7.3";
+const PPM_VERSION = "1.8.0";
 
 console.info(
   `%c POWER-FLOW-CARD-PLUS-MOBILE %c v${PPM_VERSION} `,
@@ -636,11 +636,7 @@ class PowerflowPlusMobileCard extends HTMLElement {
       // Wie die Karte herausfindet, welches Auto an welcher Wallbox hängt:
       // gar nicht ("off"), über die beiden Steckerzustände ("plug") oder
       // über den Abgleich der Ladeleistung ("power").
-      plug:
-    "Am besten ein binary_sensor, der nur beim Ein- und Ausstecken umspringt. " +
-    "Ein Statussensor mit vielen Werten (laden, fertig, pausiert) ändert sich " +
-    "auch mittendrin – dann stimmt der Zeitpunkt nicht mehr, mit dem verglichen wird.",
-  car_match: ["plug", "power"].includes(config.car_match) ? config.car_match : "off",
+      car_match: ["plug", "power"].includes(config.car_match) ? config.car_match : "off",
       // Wie weit die beiden Steckerzeitpunkte auseinanderliegen dürfen.
       car_match_window: Number.isFinite(config.car_match_window) ? config.car_match_window : 300,
       // Wie stark die beiden Leistungen abweichen dürfen, als Anteil.
@@ -661,6 +657,8 @@ class PowerflowPlusMobileCard extends HTMLElement {
       transparent: !!config.transparent,
       // Ring um das Haus nach Herkunft des Stroms einfärben statt einfarbig.
       house_mix: config.house_mix !== false,
+      // Punkte auf den Linien nach Herkunft färben, über den Knoten hinweg.
+      flow_mix: !!config.flow_mix,
       // Dasselbe am Auto: ein zweiter Ring innen, solange es laedt.
       car_mix: config.car_mix !== false,
       min_height: Number.isFinite(config.min_height) ? config.min_height : 460,
@@ -1524,6 +1522,65 @@ class PowerflowPlusMobileCard extends HTMLElement {
         PAL.wb[aktiv[0].index % PAL.wb.length]);
     }
 
+    // Woher der Strom kommt: je Quelle ein Anteil, in ihrer eigenen Farbe.
+    // Dieselbe Aufteilung nutzen der Ring ums Haus, der Ring am Auto und –
+    // wenn eingeschaltet – die Punkte auf den Linien. Ohne brauchbare Werte
+    // bleibt es einfarbig, damit nicht ein leerer Kreis wie ein Messwert
+    // aussieht.
+    const mixFarbe = {
+      grid: PAL.gridIn,
+      battery: this._batColor(v.batterySoc, -1),
+    };
+    v.sources.forEach((q, i) => { mixFarbe["src" + i] = quellFarbe(i); });
+    const mischung = v.houseMix.length > 1
+      ? v.houseMix.map((x) => ({ value: x.value, color: mixFarbe[x.key] }))
+      : null;
+
+    // Zwischen den beiden Sammelknoten fließt nur Erzeugung – dort gilt die
+    // Aufteilung über die Quellen, ohne Speicher und Netz.
+    const quellMischung = (() => {
+      const teile = v.sources
+        .map((q, i) => ({ value: Math.max(0, z(q.power)), color: quellFarbe(i) }))
+        .filter((x) => x.value > 0);
+      return teile.length > 1 ? teile : null;
+    })();
+
+    /**
+     * Welche Mischung eine Verbindung trägt – oder nichts, wenn sie selbst
+     * eine Herkunft **ist**. Eine Quellleitung, ein entladender Speicher und
+     * ein Netzbezug haben ihre eigene Farbe; alles, was aus einem Sammelknoten
+     * herausfließt, trägt die Mischung von dem, was hineinfloss.
+     */
+    const mischungFuer = (link, st) => {
+      if (link.id === "bus") return quellMischung;
+      if (link.id === "house" || link.id === "wbStamm") return mischung;
+      if (/^(wb|car)\d$/.test(link.id)) return mischung;
+      // Speicher und Netz nur in der Richtung, in der sie Abnehmer sind.
+      if (/^bat\d$/.test(link.id) && st.reversed) return mischung;
+      if (link.id === "grid" && st.reversed) return mischung;
+      return null;
+    };
+
+    /**
+     * Verteilt n Punkte auf die Anteile. Wer am weitesten hinter seinem Soll
+     * liegt, bekommt den nächsten – dadurch stehen die Farben abwechselnd auf
+     * dem Weg statt in Blöcken hintereinander.
+     */
+    const punkteVerteilen = (teile, anzahl) => {
+      const summe = teile.reduce((a, t) => a + t.value, 0);
+      const stand = teile.map((t) => ({ color: t.color, soll: (t.value / summe) * anzahl, hat: 0 }));
+      const folge = [];
+      for (let i = 0; i < anzahl; i++) {
+        let best = stand[0];
+        for (const r of stand) {
+          if (r.soll - r.hat > best.soll - best.hat + 1e-9) best = r;
+        }
+        best.hat++;
+        folge.push(best.color);
+      }
+      return folge;
+    };
+
     // ---------------------------------------------------------- Linien
     L.forEach((link) => {
       const st = states[link.id];
@@ -1562,23 +1619,50 @@ class PowerflowPlusMobileCard extends HTMLElement {
       // fetter Punkt – oder zeitweise gar keiner, wenn die Periode länger
       // ist als der Weg. Die runde Kappe verlängert jeden Punkt um lw, also
       // muss die Lücke das überstehen: sie bleibt mindestens 0,6 · lw breit.
-      const period = laenge / Math.max(2, Math.round(laenge / (lw * 3.3)));
-      const dash = [
-        Math.max(0.05, Math.min(lw * 0.7, period - lw * 1.6)),
-        0,
-      ];
-      dash[1] = period - dash[0];
+      const anzahl = Math.max(2, Math.round(laenge / (lw * 3.3)));
+      const period = laenge / anzahl;
+      const punkt = Math.max(0.05, Math.min(lw * 0.7, period - lw * 1.6));
       const speed = Math.min(90, 26 + Math.sqrt(st.power / 1000) * 16) * scale;
-      const p = el("path", {
-        d: dPath, fill: "none", stroke: st.color,
-        "stroke-width": lw, "stroke-linecap": "round",
-        "stroke-dasharray": `${dash[0].toFixed(2)} ${dash[1].toFixed(2)}`,
+
+      const bahnPunkte = (farbe, muster, versatz, weg) => {
+        const p = el("path", {
+          d: dPath, fill: "none", stroke: farbe,
+          "stroke-width": lw, "stroke-linecap": "round",
+          "stroke-dasharray": muster.map((x) => x.toFixed(2)).join(" "),
+        });
+        p.setAttribute("class", "flow-dash");
+        if (versatz) p.style.strokeDashoffset = versatz.toFixed(2);
+        p.style.setProperty("--ppm-travel",
+          (versatz + (st.reversed ? weg : -weg)).toFixed(2));
+        p.style.animationDuration = `${(weg / speed).toFixed(3)}s`;
+        p.style.filter = `drop-shadow(0 0 4px ${farbe})`;
+        svg.appendChild(p);
+      };
+
+      const mix = c.flow_mix ? mischungFuer(link, st) : null;
+      if (!mix) {
+        bahnPunkte(st.color, [punkt, period - punkt], 0, period);
+        return;
+      }
+
+      // Jeder Punkt auf dem Weg bekommt eine Herkunft. Gezeichnet wird je
+      // Farbe eine Bahn, die genau ihre Plätze trifft: dasselbe Muster über
+      // die ganze Weglänge, nur unterschiedlich verschoben. So trägt ein
+      // Punkt seine Farbe bis ans Ende, statt am Knoten zu wechseln.
+      const folge = punkteVerteilen(mix, anzahl);
+      const proFarbe = new Map();
+      folge.forEach((farbe, i) => {
+        if (!proFarbe.has(farbe)) proFarbe.set(farbe, []);
+        proFarbe.get(farbe).push(i);
       });
-      p.setAttribute("class", "flow-dash");
-      p.style.setProperty("--ppm-travel", (st.reversed ? period : -period).toFixed(2));
-      p.style.animationDuration = `${(period / speed).toFixed(3)}s`;
-      p.style.filter = `drop-shadow(0 0 4px ${st.color})`;
-      svg.appendChild(p);
+      proFarbe.forEach((plaetze, farbe) => {
+        const muster = [];
+        plaetze.forEach((platz, k) => {
+          const naechster = k + 1 < plaetze.length ? plaetze[k + 1] : plaetze[0] + anzahl;
+          muster.push(punkt, (naechster - platz) * period - punkt);
+        });
+        bahnPunkte(farbe, muster, -plaetze[0] * period, laenge);
+      });
     });
 
     // ---------------------------------------------------------- Knoten
@@ -1790,19 +1874,6 @@ class PowerflowPlusMobileCard extends HTMLElement {
       tint: z(v.grid) > 0 ? PAL.gridIn : PAL.grid, active: Math.abs(z(v.grid)) > T,
       entity: erste(c.grid),
     });
-    // Der Ring um das Haus zeigt, woher der Strom kommt: je Quelle ein Bogen
-    // in ihrer eigenen Farbe. Ohne brauchbare Werte bleibt es beim einfarbigen
-    // Ring, damit nicht ein leerer Kreis wie ein Messwert aussieht.
-    const mixFarbe = {
-      grid: PAL.gridIn,
-      battery: this._batColor(v.batterySoc, -1),
-    };
-    v.sources.forEach((q, i) => { mixFarbe["src" + i] = quellFarbe(i); });
-    // Die Mischung selbst hängt nicht daran, wo sie gezeigt wird – Haus und
-    // Auto greifen auf dieselbe Aufteilung zu, jedes mit eigenem Schalter.
-    const mischung = v.houseMix.length > 1
-      ? v.houseMix.map((x) => ({ value: x.value, color: mixFarbe[x.key] }))
-      : null;
     const hausRing = c.house_mix && z(v.house) > T ? mischung : null;
 
     drawNode("house", {
@@ -1977,6 +2048,7 @@ const LABELS = {
   animate: "Fluss animieren",
   house_mix: "Hauskreis nach Herkunft färben",
   car_mix: "Autokreis nach Herkunft färben",
+  flow_mix: "Fließpunkte nach Herkunft färben",
   show_tiles: "Kacheln unten zeigen",
   transparent: "Durchsichtiger Hintergrund",
 };
@@ -1985,6 +2057,16 @@ const computeLabel = (s) => LABELS[s.name] || s.name;
 
 /** Kleingedrucktes unter einzelnen Feldern – nur wo es wirklich hilft. */
 const HELFER = {
+  plug:
+    "Am besten ein binary_sensor, der nur beim Ein- und Ausstecken umspringt. " +
+    "Ein Statussensor mit vielen Werten (laden, fertig, pausiert) ändert sich " +
+    "auch mittendrin – dann stimmt der Zeitpunkt nicht mehr, mit dem verglichen wird.",
+  flow_mix:
+    "Die Punkte auf den Linien behalten die Farbe ihrer Quelle, auch " +
+    "unterhalb der Sammelknoten. Ein Weg, auf dem Sonne und Speicher " +
+    "zusammenkommen, trägt dann Punkte in beiden Farben, nach Anteilen " +
+    "verteilt. Die Aufteilung ist dieselbe wie beim Ring ums Haus – eine " +
+    "Aufteilung nach Einspeisung, keine Messung.",
   included_in_house:
     "Anschalten, wenn dieses Gerät hinter dem Hauszähler hängt. Die Karte " +
     "rechnet seine Leistung dann aus dem Hausverbrauch heraus, statt sie " +
@@ -2105,6 +2187,7 @@ function toForm(cfg) {
     animate: c.animate !== false,
     house_mix: c.house_mix !== false,
     car_mix: c.car_mix !== false,
+    flow_mix: !!c.flow_mix,
     show_tiles: c.show_tiles !== false,
     transparent: !!c.transparent,
   };
@@ -2194,6 +2277,8 @@ function fromForm(d, cfg) {
   neu.animate = d.animate === false ? false : undefined;
   neu.house_mix = d.house_mix === false ? false : undefined;
   neu.car_mix = d.car_mix === false ? false : undefined;
+  // false ist die Vorgabe und muss nicht in der Konfiguration stehen.
+  neu.flow_mix = d.flow_mix ? true : undefined;
   neu.show_tiles = d.show_tiles === false ? false : undefined;
   neu.transparent = d.transparent ? true : undefined;
   return neu;
@@ -2265,6 +2350,7 @@ const SEITEN_SCHEMA = {
     { name: "animate", selector: { boolean: {} } },
     { name: "house_mix", selector: { boolean: {} } },
     { name: "car_mix", selector: { boolean: {} } },
+    { name: "flow_mix", selector: { boolean: {} } },
     { name: "show_tiles", selector: { boolean: {} } },
     { name: "autarky", selector: SEL_ENTITY },
     { name: "self_consumption", selector: SEL_ENTITY },
