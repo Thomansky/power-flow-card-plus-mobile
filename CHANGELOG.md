@@ -5,6 +5,38 @@ die Versionsnummern [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unveröffentlicht]
 
+## [1.9.0] – 2026-09-20
+
+### Neu
+
+* **Das Einspeiselimit ist sichtbar.** Mit `grid_limit` wird der Ring ums
+  Netz zur Anzeige: er füllt sich mit der Einspeisung, voll heißt gedeckelt,
+  und darunter steht „am Limit" statt „Einspeisung". Das Limit selbst steht
+  klein über dem Kreis – dort, wo es in der Vorgängerkarte auch stand. So
+  sieht man auf einen Blick, ob der Regler gerade abriegelt, ohne eine Zahl
+  lesen zu müssen.
+
+  Das Limit darf ein Sensor in W oder kW sein, ein Sensor in Prozent (dann
+  braucht die Karte `pv_peak`, die Spitzenleistung in kWp, um daraus Watt zu
+  machen) oder eine feste Zahl in Watt. Kommt es in Prozent ohne
+  Spitzenleistung, bleibt es beim Etikett; der Ring kann sich dann nicht
+  füllen, weil die Karte nicht weiß, wieviel 70 % sind. Als „am Limit" gilt
+  eine Einspeisung ab 97 % des Limits.
+
+* **Die Prüfstände liegen jetzt im Repository** unter `test/`, rund 200
+  Prüfungen, die ohne Home Assistant im Browser laufen. Die ersten Fassungen
+  lagen in einem Arbeitsverzeichnis außerhalb und sind mit ihm verschwunden.
+  Seitdem gehören sie hierher.
+
+### Behoben
+
+* **Vier weitere Hilfetexte saßen an der falschen Stelle** – zwei im
+  Wallbox-Eintrag der Konfiguration, zwei in der Beschriftungstabelle, wo sie
+  die kurzen Feldnamen überschrieben: „Einspeiselimit (optional)" wäre als
+  ganzer Absatz angezeigt worden. Dieselbe Ursache wie in 1.8.0, nur an
+  anderen Stellen; die Prüfung dafür sucht jetzt auch in Listeneinträgen und
+  in den Beschriftungen.
+
 ## [1.8.0] – 2026-08-31
 
 ### Neu
@@ -420,7 +452,8 @@ Erste Veröffentlichung.
   hohe, schmale Flächen ausgelegt.
 * Reine Anzeige, es lässt sich nichts steuern.
 
-[Unveröffentlicht]: https://github.com/thomansky/power-flow-card-plus-mobile/compare/v1.8.0...HEAD
+[Unveröffentlicht]: https://github.com/thomansky/power-flow-card-plus-mobile/compare/v1.9.0...HEAD
+[1.9.0]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.9.0
 [1.8.0]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.8.0
 [1.7.3]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.7.3
 [1.7.2]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.7.2

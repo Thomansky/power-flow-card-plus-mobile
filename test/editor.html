@@ -1,0 +1,161 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Prüfstand: Editor</title>
+<body style="background:#0B0E13;margin:0;--divider-color:#444;--primary-text-color:#ddd">
+<script src="../power-flow-card-plus-mobile.js"></script>
+<script src="pruef.js"></script>
+<script>
+// Der visuelle Editor ohne Home Assistant, mit dem ha-form-Ersatz aus pruef.js.
+
+const zeilen = (ed) => [...ed.querySelectorAll("details.zeile")];
+const oeffne = (z) => { z.open = true; z.dispatchEvent(new Event("toggle")); return z.querySelector("ha-form"); };
+const domains = (form, name) => {
+  let t = null;
+  const geh = (s) => s.forEach((e) => { if (e.schema) geh(e.schema); else if (e.name === name) t = e.selector; });
+  geh(form.schema || []);
+  return t && t.entity ? (t.entity.filter || []).flatMap((f) => f.domain || []) : null;
+};
+const auswahl = (form, name) => {
+  let t = null;
+  const geh = (s) => s.forEach((e) => { if (e.schema) geh(e.schema); else if (e.name === name) t = e.selector; });
+  geh(form.schema || []);
+  return (t && t.select && t.select.options || []).map((o) => o.label);
+};
+
+(async () => {
+  // --- Zwei Eingaben nacheinander: die erste bleibt --------------------------
+  {
+    const { ed, stand } = editor({ type: "custom:power-flow-card-plus-mobile", house: "sensor.haus",
+      batteries: [{ power: "sensor.b1" }] });
+    await warte(60);
+    ed._oeffne("batteries"); await warte();
+    const form = oeffne(zeilen(ed)[0]);
+    form.tippe("name", "Keller"); await warte();
+    form.tippe("soc", "sensor.soc1"); await warte();
+    ok("Eintrag: zweite Eingabe kommt an", stand.letzte.batteries[0].soc, "sensor.soc1");
+    ok("Eintrag: die erste steht noch", stand.letzte.batteries[0].name, "Keller");
+    ed._oeffne("anzeige"); await warte();
+    const seite = ed.querySelector("ha-form");
+    seite.tippe("title", "Mein Fluss"); await warte();
+    seite.tippe("min_height", 640); await warte();
+    ok("Seite: zweite Eingabe kommt an", stand.letzte.min_height, 640);
+    ok("Seite: die erste steht noch", stand.letzte.title, "Mein Fluss");
+    ed.remove();
+  }
+
+  // --- Quellen: Hinzufügen löscht die erste nicht (alte Schreibweise) --------
+  {
+    const { ed, stand } = editor({ type: "custom:power-flow-card-plus-mobile", house: "sensor.haus",
+      pv: "sensor.pv", external: "sensor.ext" });
+    await warte(60);
+    ok("Hauptmenü zählt zwei", ed._zusammenfassung("sources"), "2 von 5");
+    ed._oeffne("sources"); await warte();
+    ok("Liste zeigt beide", zeilen(ed).length, 2);
+    ed.querySelector("button.add").click(); await warte();
+    ok("nach dem Hinzufügen drei", (stand.letzte.sources || []).length, 3);
+    ok("die erste ist noch da", stand.letzte.sources[0].power, "sensor.pv");
+    ok("alte Schreibweise ist abgeräumt", stand.letzte.pv, undefined);
+    ed.remove();
+  }
+
+  // --- Autos: Seite, Felder, Zuordnung ---------------------------------------
+  {
+    const { ed, stand } = editor({ type: "custom:power-flow-card-plus-mobile", house: "sensor.haus" });
+    await warte(60);
+    ok("Autos steht im Hauptmenü",
+      [...ed.querySelectorAll(".menue-zeile .menue-name")].map((e) => e.textContent).includes("Autos"), true);
+    ed._oeffne("cars"); await warte();
+    let formen = [...ed.querySelectorAll("ha-form")];
+    let unten = formen[formen.length - 1];
+    ok("Zuordnungsfeld ist da", felder(unten).includes("car_match"), true);
+    ok("Spielraum bleibt zunächst verborgen", felder(unten).includes("car_match_window"), false);
+    unten.tippe("car_match", "plug"); await warte();
+    ok("car_match landet in der Konfiguration", stand.letzte.car_match, "plug");
+    ok("Vorgaben stehen nicht in der Konfiguration",
+      stand.letzte.car_match_window === undefined && stand.letzte.car_match_tolerance === undefined, true);
+    ed._oeffne("cars"); await warte();
+    formen = [...ed.querySelectorAll("ha-form")]; unten = formen[formen.length - 1];
+    ok("jetzt erscheint der Spielraum", felder(unten).includes("car_match_window"), true);
+    ok("Eindeutigkeitsschalter erscheint", felder(unten).includes("car_match_unique"), true);
+    unten.tippe("car_match", "power"); await warte();
+    ed._oeffne("cars"); await warte();
+    formen = [...ed.querySelectorAll("ha-form")]; unten = formen[formen.length - 1];
+    unten.tippe("car_match_tolerance", 40); await warte();
+    ok("Prozent wird zum Anteil", stand.letzte.car_match_tolerance, 0.4);
+
+    ed._oeffne("cars"); await warte();
+    ed.querySelector("button.add").click(); await warte();
+    const zeile = zeilen(ed)[0];
+    const eintrag = oeffne(zeile);
+    ok("Auto hat Ladestand, Stecker, Ladeleistung",
+      ["soc", "plug", "charge_power"].every((n) => felder(eintrag).includes(n)), true);
+    ok("Stecker lässt binary_sensor zu", (domains(eintrag, "plug") || []).includes("binary_sensor"), true);
+    ok("Ladestand bleibt beim Zahlenfilter", (domains(eintrag, "soc") || []).includes("binary_sensor"), false);
+    eintrag.tippe("charge_power", "sensor.auto_leistung"); await warte();
+    ok("Ladeleistung landet als power", stand.letzte.cars[0].power, "sensor.auto_leistung");
+    const kopf = () => zeile.querySelector("summary span").textContent;
+    ok("Kopfzeile heißt zunächst nach der Nummer", kopf(), "Auto 1");
+    eintrag.tippe("name", "Skoda"); await warte();
+    ok("Kopfzeile übernimmt den Namen", kopf(), "Skoda");
+    ok("dabei wurde nicht neu gezeichnet", zeile.isConnected && zeile.querySelector("ha-form") === eintrag, true);
+    eintrag.tippe("name", "<b>x</b>"); await warte();
+    ok("Name wird nicht als Markup gedeutet", kopf(), "<b>x</b>");
+    ed.remove();
+  }
+
+  // --- Wallbox wählen im Automenü, alte Eintragung wird geräumt ------------
+  {
+    const { ed, stand } = editor({ type: "custom:power-flow-card-plus-mobile", house: "sensor.haus",
+      wallboxes: [{ power: "sensor.wb1", name: "Garage" }, { power: "sensor.wb2", name: "Hof", car: "sensor.alt", car_name: "Alt" }],
+      cars: [{ soc: "sensor.a1", name: "Skoda" }] });
+    await warte(60);
+    ed._oeffne("cars"); await warte();
+    const f = oeffne(zeilen(ed)[0]);
+    ok("Auto hat eine Wallbox-Auswahl", felder(f).includes("wallbox"), true);
+    ok("die Auswahl nennt die Wallboxen", JSON.stringify(auswahl(f, "wallbox")), JSON.stringify(["Selbst zuordnen", "Garage", "Hof"]));
+    f.tippe("wallbox", "2"); await warte();
+    ok("die Wahl landet als Zahl", stand.letzte.cars[0].wallbox, 2);
+    ok("das alte Auto an der Wallbox ist geräumt", stand.letzte.wallboxes[1].car, undefined);
+    ok("die Wallbox bleibt sonst unangetastet", stand.letzte.wallboxes[1].name, "Hof");
+    ed._oeffne("wallboxes"); await warte();
+    zeilen(ed)[0].querySelector("button.del").click(); await warte();
+    ok("nach dem Entfernen zeigt das Auto auf die richtige Wallbox", stand.letzte.cars[0].wallbox, 1);
+    ed._oeffne("wallboxes"); await warte();
+    zeilen(ed)[0].querySelector("button.del").click(); await warte();
+    ok("ohne Wallbox bleibt kein Verweis", stand.letzte.cars[0].wallbox, undefined);
+    ed.remove();
+  }
+
+  // --- Wallbox hat ein Steckerfeld; die Karte nimmt die Konfiguration an ----
+  {
+    const { ed, stand } = editor({ type: "custom:power-flow-card-plus-mobile", house: "sensor.haus" });
+    await warte(60);
+    ed._oeffne("wallboxes"); await warte();
+    ed.querySelector("button.add").click(); await warte();
+    const f = oeffne(zeilen(ed)[0]);
+    ok("Wallbox hat ein Steckerfeld", felder(f).includes("plug"), true);
+    ok("Wallbox: Stecker lässt binary_sensor zu", (domains(f, "plug") || []).includes("binary_sensor"), true);
+    let heil = true;
+    try { document.createElement("power-flow-card-plus-mobile").setConfig(stand.letzte); } catch (e) { heil = e.message; }
+    ok("die Karte nimmt die Konfiguration an", heil, true);
+    ed.remove();
+  }
+
+  // --- Netz-Seite: Limit und Spitzenleistung ---------------------------------
+  {
+    const { ed, stand } = editor({ type: "custom:power-flow-card-plus-mobile", house: "sensor.haus" });
+    await warte(60);
+    ed._oeffne("grid"); await warte();
+    const f = ed.querySelector("ha-form");
+    ok("Netz-Seite hat das Limitfeld", felder(f).includes("grid_limit"), true);
+    ok("Netz-Seite hat die Spitzenleistung", felder(f).includes("pv_peak"), true);
+    f.tippe("grid_limit", "sensor.limit"); await warte();
+    f.tippe("pv_peak", 9.9); await warte();
+    ok("Limit gespeichert", stand.letzte.grid_limit, "sensor.limit");
+    ok("Spitzenleistung gespeichert, erste Eingabe blieb", stand.letzte.pv_peak, 9.9);
+    ed.remove();
+  }
+
+  fertig();
+})();
+</script>

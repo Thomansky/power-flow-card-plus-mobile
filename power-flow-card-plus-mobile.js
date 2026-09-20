@@ -8,7 +8,7 @@
  * https://github.com/thomansky/power-flow-card-plus-mobile
  */
 
-const PPM_VERSION = "1.8.0";
+const PPM_VERSION = "1.9.0";
 
 console.info(
   `%c POWER-FLOW-CARD-PLUS-MOBILE %c v${PPM_VERSION} `,
@@ -571,6 +571,11 @@ class PowerflowPlusMobileCard extends HTMLElement {
       grid: bipolar(config.grid, ["consumption", "import", "from_grid"],
                                  ["production", "export", "to_grid"]),
       house: config.house ?? null,
+      // Einspeiselimit: eine Entität in W, kW oder %, oder eine feste Zahl
+      // in Watt. Kommt es in Prozent, braucht die Karte die Spitzenleistung
+      // der Anlage, um daraus Watt zu machen – sonst bleibt es beim Etikett.
+      grid_limit: config.grid_limit ?? null,
+      pv_peak: Number.isFinite(config.pv_peak) && config.pv_peak > 0 ? config.pv_peak : null,
       // Optional: gemessene Werte statt gerechneter.
       autarky: config.autarky ?? null,
       self_consumption: config.self_consumption ?? config.selfconsumption ?? null,
@@ -598,16 +603,7 @@ class PowerflowPlusMobileCard extends HTMLElement {
           // Hängt hinter dem Hauszähler und steckt in dessen Messwert schon drin.
           in_house: !!o.included_in_house,
           // Zustand des Ladesteckers. Nur für die selbsttätige Zuordnung.
-          wallbox:
-    "Fest zuordnen, ohne Suche. „Selbst zuordnen“ überlässt es der " +
-    "Einstellung unter der Liste. Was an der Wallbox selbst unter „Auto an " +
-    "dieser Wallbox“ steht, schlägt beides – deshalb räumt die Karte das dort " +
-    "weg, sobald hier eine Wallbox gewählt wird.",
-  invert:
-    "Anschalten, wenn der Sensor die Erzeugung negativ meldet. Zieht die " +
-    "Quelle im Bereitschaftsbetrieb, bleibt der Wert danach negativ – die " +
-    "Karte zeigt ihn dann und dreht die Flussrichtung um.",
-  plug: o.plug ?? null,
+          plug: o.plug ?? null,
           // Das Auto, das an dieser Wallbox hängt. Steht hier eins, gilt es –
           // von Hand eingetragen schlägt selbst gefunden.
           car: o.car ?? null,
@@ -707,7 +703,8 @@ class PowerflowPlusMobileCard extends HTMLElement {
     // `hass` wird von Home Assistant jedes Mal neu gesetzt.
     const c = this._config;
     const ausBip = (b) => (b ? [b.single, b.pos, b.neg] : []);
-    this._watched = [c.house, c.autarky, c.self_consumption]
+    this._watched = [c.house, c.autarky, c.self_consumption,
+                     typeof c.grid_limit === "string" ? c.grid_limit : null]
       .concat(c.sources.flatMap((q) => (Array.isArray(q.power) ? q.power : [q.power])))
       .concat(ausBip(c.grid))
       .concat(c.batteries.flatMap((b) => ausBip(b.power).concat([b.soc])))
@@ -1059,6 +1056,30 @@ class PowerflowPlusMobileCard extends HTMLElement {
     const gridImport = Math.max(0, z(grid));
     const gridExport = Math.max(0, -z(grid));
 
+    // Einspeiselimit: als Leistung in Watt, wenn es geht. Eine Prozentangabe
+    // wird über die Spitzenleistung zu Watt; fehlt die, bleibt nur die Zahl
+    // fürs Etikett. Eine feste Zahl in der Konfiguration gilt als Watt.
+    let gridLimit = null, gridLimitPct = null;
+    if (typeof c.grid_limit === "number" && c.grid_limit > 0) {
+      gridLimit = c.grid_limit;
+    } else if (typeof c.grid_limit === "string" && this._hass) {
+      const st = this._hass.states[c.grid_limit];
+      const einheit = String(st?.attributes?.unit_of_measurement || "").trim().toLowerCase();
+      if (einheit === "%") {
+        gridLimitPct = this._pctVal(c.grid_limit);
+        if (gridLimitPct != null && c.pv_peak) {
+          gridLimit = (c.pv_peak * 1000 * gridLimitPct) / 100;
+        }
+      } else {
+        const w = this._num(c.grid_limit);
+        if (w != null && w > 0) gridLimit = w;
+      }
+    }
+    // Wie nah die Einspeisung am Limit ist. Ab 97 % gilt sie als gedeckelt –
+    // die letzten Prozent verschluckt der Regler ohnehin.
+    const gridLimitFrac = gridLimit != null ? Math.min(1, gridExport / gridLimit) : null;
+    const amLimit = gridLimitFrac != null && gridExport > c.threshold && gridLimitFrac >= 0.97;
+
     // Wallboxen und Speicher hängen oft hinter dem Hauszähler. Dann steckt
     // ihre Leistung in dessen Messwert schon drin, und die Karte würde sie
     // zweimal zeigen: einmal im Haus und einmal im eigenen Zweig. Wer den
@@ -1154,6 +1175,7 @@ class PowerflowPlusMobileCard extends HTMLElement {
       gridImport, gridExport,
       consumption,
       autarky, selfConsumption, autarkyErsatz, selfErsatz,
+      gridLimit, gridLimitPct, gridLimitFrac, amLimit,
       durchsatz,
       houseMix,
     };
@@ -1367,6 +1389,8 @@ class PowerflowPlusMobileCard extends HTMLElement {
     const KUGEL = istHell ? "#F2F3F5" : (c.transparent ? "#0B0E13" : "#101318");
     const SCHRIFT = istHell ? "#212121" : "#fff";
     const SYMBOL = istHell ? "rgba(0,0,0,.78)" : "rgba(255,255,255,.92)";
+    // Für "am Limit": auffällig, aber keine der Flussfarben.
+    const WARN    = "#FF9F0A";
     const RINNE = istHell ? "rgba(0,0,0,.10)" : "rgba(255,255,255,.10)";
 
     // Farbe und Symbol je Erzeugungsquelle. Reihenfolge der Zuständigkeit:
@@ -1826,7 +1850,7 @@ class PowerflowPlusMobileCard extends HTMLElement {
         textNode(g, cc.x, y, o.value, hWert, 600, SCHRIFT);
         if (o.detail) {
           y += zeilenLuft + hDetail;
-          textNode(g, cc.x, y, o.detail, hDetail, 500, o.tint);
+          textNode(g, cc.x, y, o.detail, hDetail, 500, o.detailTint || o.tint);
         }
         if (o.legend) {
           const step = d * 0.185;
@@ -1868,12 +1892,34 @@ class PowerflowPlusMobileCard extends HTMLElement {
     });
     drawNode("busGen", { bus: true, value: fmtPower(v.production), tint: PAL.bus, active: true });
     drawNode("busDist", { bus: true, value: fmtPower(v.durchsatz), tint: PAL.bus, active: true });
+    // Ist ein Einspeiselimit bekannt, wird der Ring ums Netz zur Anzeige: er
+    // füllt sich mit der Einspeisung, voll heißt gedeckelt. So sieht man auf
+    // einen Blick, ob der Regler gerade abriegelt – ohne eine Zahl lesen zu
+    // müssen. Beim Bezug bleibt es beim schlichten Ring, da gilt kein Limit.
+    const limitAnzeige = v.gridLimit != null && v.gridExport > T;
     drawNode("grid", {
       icon: "plug", mdi: IC.grid || "mdi:transmission-tower", title: "Netz", value: fmtPower(v.grid == null ? null : Math.abs(v.grid)),
-      detail: z(v.grid) > T ? "Bezug" : v.gridExport > T ? "Einspeisung" : null,
+      detail: z(v.grid) > T ? "Bezug"
+        : v.gridExport > T ? (v.amLimit ? "am Limit" : "Einspeisung") : null,
+      detailTint: v.amLimit ? WARN : null,
       tint: z(v.grid) > 0 ? PAL.gridIn : PAL.grid, active: Math.abs(z(v.grid)) > T,
+      soc: limitAnzeige ? v.gridLimitFrac * 100 : undefined,
+      ticks: limitAnzeige,
       entity: erste(c.grid),
     });
+
+    // Das Limit selbst steht klein über dem Netzkreis – dort, wo es in der
+    // Vorgängerkarte auch stand. In Watt, wenn es sich rechnen ließ, sonst
+    // in Prozent.
+    if (v.gridLimit != null || v.gridLimitPct != null) {
+      const p = P("grid"), r = RAD("grid");
+      const text = v.gridLimit != null
+        ? `Limit ${fmtPower(v.gridLimit)}`
+        : `Limit ${Math.round(v.gridLimitPct)} %`;
+      const etikett = textNode(svg, p.x, p.y - r - r * 0.2, text, r * 0.19, 500,
+        v.amLimit ? WARN : SCHRIFT, v.amLimit ? 1 : 0.62);
+      etikett.setAttribute("class", "limit-etikett");
+    }
     const hausRing = c.house_mix && z(v.house) > T ? mischung : null;
 
     drawNode("house", {
@@ -2012,6 +2058,8 @@ const LABELS = {
   grid: "Netz (positiv = Bezug)",
   grid_consumption: "Netz – Bezug",
   grid_production: "Netz – Einspeisung",
+  grid_limit: "Einspeiselimit (optional)",
+  pv_peak: "Spitzenleistung der Anlage (kWp)",
   power_mode: "Bauart der Sensoren",
   power: "Leistung (positiv = lädt)",
   charge: "Laden",
@@ -2057,6 +2105,23 @@ const computeLabel = (s) => LABELS[s.name] || s.name;
 
 /** Kleingedrucktes unter einzelnen Feldern – nur wo es wirklich hilft. */
 const HELFER = {
+  wallbox:
+    "Fest zuordnen, ohne Suche. „Selbst zuordnen“ überlässt es der " +
+    "Einstellung unter der Liste. Was an der Wallbox selbst unter „Auto an " +
+    "dieser Wallbox“ steht, schlägt beides – deshalb räumt die Karte das dort " +
+    "weg, sobald hier eine Wallbox gewählt wird.",
+  invert:
+    "Anschalten, wenn der Sensor die Erzeugung negativ meldet. Zieht die " +
+    "Quelle im Bereitschaftsbetrieb, bleibt der Wert danach negativ – die " +
+    "Karte zeigt ihn dann und dreht die Flussrichtung um.",
+  grid_limit:
+    "Sensor in W, kW oder %. Ist ein Limit bekannt, wird der Ring ums Netz " +
+    "zur Anzeige: er füllt sich mit der Einspeisung, voll heißt gedeckelt. " +
+    "Bei einer Prozentangabe braucht die Karte zusätzlich die Spitzenleistung, " +
+    "um daraus Watt zu machen – sonst bleibt es beim Etikett über dem Kreis.",
+  pv_peak:
+    "Nur nötig, wenn das Limit in Prozent kommt. Prozent der Spitzenleistung " +
+    "ergibt das Limit in Watt, und erst damit lässt sich der Ring füllen.",
   plug:
     "Am besten ein binary_sensor, der nur beim Ein- und Ausstecken umspringt. " +
     "Ein Statussensor mit vielen Werten (laden, fertig, pausiert) ändert sich " +
@@ -2179,6 +2244,10 @@ function toForm(cfg) {
   const f = {
     title: c.title,
     house: c.house,
+    // Eine feste Zahl in Watt lässt sich im Editor nicht wählen – das Feld
+    // zeigt nur Entitäten. Sie bleibt in der Konfiguration erhalten.
+    grid_limit: typeof c.grid_limit === "string" ? c.grid_limit : undefined,
+    pv_peak: Number.isFinite(c.pv_peak) ? c.pv_peak : undefined,
     autarky: c.autarky,
     self_consumption: c.self_consumption,
     grid_mode: istPaar(c.grid) ? "split" : "single",
@@ -2243,6 +2312,10 @@ function fromForm(d, cfg) {
   neu.pv = d.pv || undefined;
   neu.external = d.external || undefined;
   neu.house = d.house || undefined;
+  // Eine feste Zahl in der Konfiguration überlebt den Editor unangetastet;
+  // sonst gilt, was das Feld sagt.
+  if (typeof cfg.grid_limit !== "number") neu.grid_limit = d.grid_limit || undefined;
+  neu.pv_peak = Number.isFinite(d.pv_peak) && d.pv_peak > 0 ? d.pv_peak : undefined;
   neu.autarky = d.autarky || undefined;
   neu.self_consumption = d.self_consumption || undefined;
 
@@ -2331,6 +2404,9 @@ const SEITEN_SCHEMA = {
       { name: "color_grid_import", selector: SEL_COLOR },
       { name: "color_grid_export", selector: SEL_COLOR },
     ] },
+    { name: "grid_limit", selector: SEL_ENTITY },
+    { name: "pv_peak", selector: { number: { min: 0.1, max: 500, step: 0.1, mode: "box",
+                                            unit_of_measurement: "kWp" } } },
   ],
 
   house: () => [

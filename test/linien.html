@@ -1,0 +1,179 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Prüfstand: Linien</title>
+<body style="background:#0B0E13;margin:0">
+<script src="../power-flow-card-plus-mobile.js"></script>
+<script src="pruef.js"></script>
+<script>
+// Geometrie der Verbindungen: Länge, Punktraster, Abstände, Anfahrt.
+
+const S = {
+  "sensor.q1": zustand("sensor.q1", 3340, "W"),
+  "sensor.q2": zustand("sensor.q2", 3230, "W"),
+  "sensor.q3": zustand("sensor.q3", 601, "W"),
+  "sensor.q4": zustand("sensor.q4", 900, "W"),
+  "sensor.q5": zustand("sensor.q5", 1500, "W"),
+  "sensor.haus": zustand("sensor.haus", 5170, "W"),
+  "sensor.netz": zustand("sensor.netz", -455, "W"),
+  "sensor.b1": zustand("sensor.b1", -1320, "W"),
+  "sensor.soc1": zustand("sensor.soc1", 34, "%"),
+  "sensor.b2": zustand("sensor.b2", 2130, "W"),
+  "sensor.soc2": zustand("sensor.soc2", 69, "%"),
+  "sensor.wb": zustand("sensor.wb", 3960, "W"),
+  "sensor.wb2": zustand("sensor.wb2", 10800, "W"),
+  "sensor.car": zustand("sensor.car", 81, "%"),
+  "sensor.car2": zustand("sensor.car2", 55, "%"),
+};
+const LEISTUNG = { "#FFC300": 3340, "#FF5A2D": 3230 };
+
+const bau = (nQ, nB, spalten, w, h) => karte({
+  sources: [1, 2, 3, 4, 5].slice(0, nQ).map((i) => ({ power: "sensor.q" + i, name: "Q" + i })),
+  house: "sensor.haus", grid: "sensor.netz",
+  batteries: [{ power: "sensor.b1", soc: "sensor.soc1" }, { power: "sensor.b2", soc: "sensor.soc2" }].slice(0, nB),
+  wallboxes: [
+    { power: "sensor.wb", name: "WB1", car: "sensor.car", car_name: "Auto 1" },
+    { power: "sensor.wb2", name: "WB2", car: "sensor.car2", car_name: "Auto 2" },
+  ].slice(0, spalten),
+}, S, w, h);
+
+const linien = (svg) => [...svg.querySelectorAll("path.flow-dash")].map((p) => {
+  const da = p.getAttribute("stroke-dasharray").split(" ").map(Number);
+  const lw = +p.getAttribute("stroke-width");
+  const len = p.getTotalLength();
+  const period = da.reduce((a, b) => a + b, 0);
+  return { len, lw, period, punkt: da[0], luecke: da[1] - lw, farbe: p.getAttribute("stroke") };
+});
+const bahnen = (svg) => [...svg.querySelectorAll("path[stroke-opacity]")];
+
+// Kleinster Abstand zwischen zwei verschiedenen Bahnen, ohne die Stellen,
+// an denen sie sich absichtlich treffen.
+const engsteNaehe = (svg) => {
+  const alle = bahnen(svg).map((p) => punkte(p, 60));
+  let min = Infinity;
+  for (let a = 0; a < alle.length; a++) for (let b = a + 1; b < alle.length; b++) {
+    let m = Infinity;
+    for (const p of alle[a]) for (const q of alle[b]) m = Math.min(m, Math.hypot(p[0] - q[0], p[1] - q[1]));
+    if (m > 1) min = Math.min(min, m);
+  }
+  return min;
+};
+
+(async () => {
+  // --- Über alle Formate und Bestückungen ---------------------------------
+  let kuerzeste = Infinity, engste = Infinity, wenigste = Infinity, abweichung = 0, umkehr = 0, leer = 0;
+  for (const [w, h] of [[1000, 460], [1000, 677], [760, 500], [560, 620], [400, 760], [380, 620], [340, 900]]) {
+    for (const nQ of [1, 2, 3, 4, 5]) for (const [nB, sp] of [[0, 0], [1, 1], [2, 2]]) {
+      const { svg, box } = bau(nQ, nB, sp, w, h);
+      const ls = linien(svg);
+      if (!ls.length) leer++;
+      for (const l of ls) {
+        kuerzeste = Math.min(kuerzeste, l.len);
+        engste = Math.min(engste, l.luecke);
+        wenigste = Math.min(wenigste, l.len / l.period);
+        const n = Math.round(l.len / l.period);
+        abweichung = Math.max(abweichung, Math.abs(l.len - n * l.period) / l.len);
+      }
+      const q = ls.filter((l) => LEISTUNG[l.farbe] != null);
+      for (const a of q) for (const b of q) {
+        if (LEISTUNG[a.farbe] > LEISTUNG[b.farbe] && a.lw < b.lw - 0.05) umkehr++;
+      }
+      box.remove();
+    }
+  }
+  ok("jedes Format hat Verbindungen", leer, 0);
+  ok("kürzeste Verbindung über 12 px", kuerzeste > 12, true);
+  ok("überall sichtbare Lücke zwischen den Punkten", engste > 0.5, true);
+  ok("überall mindestens zwei Punkte", wenigste >= 1.99, true);
+  ok("das Punktraster passt ganzzahlig auf den Weg", abweichung < 0.01, true);
+  ok("Dicke kehrt die Reihenfolge nie um", umkehr, 0);
+
+  // --- Knotenreihen rutschen nur auf breiten Flächen -----------------------
+  const knoten = (svg, W, H, y0) => [...new Set([...svg.querySelectorAll("circle")]
+    .filter((c) => Math.abs(+c.getAttribute("r") - 0.074 * W) < 0.004 * W)
+    .map((c) => Math.round(+c.getAttribute("cy") * 10) / 10))].sort((a, b) => a - b);
+  const masse = (svg) => {
+    const vb = svg.getAttribute("viewBox").split(" ").map(Number);
+    const a = Math.min(0.78, Math.max(0.56, vb[2] / vb[3]));
+    let W = vb[2], H = vb[2] / a;
+    if (H > vb[3]) { H = vb[3]; W = vb[3] * a; }
+    return { W, H, y0: (vb[3] - H) / 2 };
+  };
+  {
+    const { svg, box } = bau(1, 2, 1, 380, 700);
+    const { W, H, y0 } = masse(svg);
+    const k = knoten(svg, W, H, y0);
+    ok("hohe Fläche: Sammelknoten unverändert bei 0,268", Math.abs(k[0] - (y0 + 0.268 * H)) < 0.6, true);
+    ok("hohe Fläche: Verteilknoten unverändert bei 0,445", Math.abs(k[1] - (y0 + 0.445 * H)) < 0.6, true);
+    box.remove();
+  }
+  {
+    const { svg, box } = bau(1, 2, 1, 1000, 500);
+    const { W, H, y0 } = masse(svg);
+    const k = knoten(svg, W, H, y0);
+    ok("breite Fläche: Sammelknoten rutscht herunter", k[0] > y0 + 0.29 * H, true);
+    box.remove();
+  }
+
+  // --- Zwei Ladespalten -----------------------------------------------------
+  for (const [w, h] of [[400, 760], [1000, 500], [560, 620]]) {
+    const { svg, box } = bau(1, 1, 2, w, h);
+    ok(`zwei Ladespalten ${w}x${h}: nichts läuft dicht nebenher`, engsteNaehe(svg) > 12, true);
+    box.remove();
+  }
+  {
+    const { svg, box } = bau(1, 1, 2, 400, 760);
+    const vb = svg.getAttribute("viewBox").split(" ").map(Number);
+    const unten = bahnen(svg).map((p) => {
+      const pts = punkte(p, 40);
+      return { d: p.getAttribute("d"), startX: pts[0][0], endeX: pts[pts.length - 1][0],
+        minY: Math.min(...pts.map((q) => q[1])) };
+    }).filter((b) => b.minY > 0.5 * vb[3]);
+    ok("unten gibt es Bahnen", unten.length > 0, true);
+    ok("keine Bahn läuft unten nach links zurück", unten.every((b) => b.endeX >= b.startX - 3), true);
+    // Die beiden Äste tragen einen Bogen und laufen nur kurz gemeinsam.
+    const aeste = unten.filter((b) => {
+      const m = b.d.match(/^M ([\d.]+) ([\d.]+)/);
+      return m && +m[2] > 0.5 * vb[3] && +m[2] < 0.75 * vb[3];
+    });
+    ok("beide Äste starten an derselben Stelle", aeste.length, 2);
+    ok("beide Äste haben einen Bogen", aeste.every((b) => b.d.includes("Q")), true);
+    box.remove();
+  }
+  {
+    const { svg, box } = bau(1, 1, 1, 400, 760);
+    ok("eine Ladespalte kommt ohne Gabel aus", engsteNaehe(svg) > 12, true);
+    box.remove();
+  }
+
+  // --- Radiale Anfahrt ------------------------------------------------------
+  // Das letzte Stück jeder Linie zeigt auf die Mitte des Kreises, in den sie
+  // läuft. Sonst liegt die runde Kappe quer zum Ring und schmiert darüber.
+  {
+    const { svg, box } = bau(5, 2, 0, 390, 620);
+    const kreise = [...svg.querySelectorAll("circle")]
+      .map((c) => ({ x: +c.getAttribute("cx"), y: +c.getAttribute("cy"), r: +c.getAttribute("r") }))
+      .filter((c) => c.r > 5);
+    const richtungFehler = (p, ziel) => {
+      const L = p.getTotalLength();
+      const e = p.getPointAtLength(L), d = p.getPointAtLength(Math.max(0, L - 6));
+      const rich = Math.atan2(e.y - d.y, e.x - d.x);
+      const radial = Math.atan2(ziel.y - e.y, ziel.x - e.x);
+      let diff = Math.abs(rich - radial) * 180 / Math.PI;
+      while (diff > 180) diff = 360 - diff;
+      return diff;
+    };
+    // Für jede Bahn: der Kreis, an dessen Rand sie endet.
+    const fehler = bahnen(svg).map((p) => {
+      const L = p.getTotalLength();
+      const e = p.getPointAtLength(L);
+      const ziel = kreise.find((c) => Math.abs(Math.hypot(e.x - c.x, e.y - c.y) - c.r) < 1.5);
+      return ziel ? richtungFehler(p, ziel) : null;
+    }).filter((x) => x != null);
+    ok("jede Linie endet an einem Kreisrand", fehler.length, bahnen(svg).length);
+    ok("alle laufen radial in den Knoten", Math.max(...fehler) < 5, true);
+    box.remove();
+  }
+
+  fertig();
+})();
+</script>

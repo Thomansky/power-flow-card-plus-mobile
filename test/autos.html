@@ -1,0 +1,143 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Prüfstand: Auto und Wallbox</title>
+<body style="background:#0B0E13;margin:0">
+<script src="../power-flow-card-plus-mobile.js"></script>
+<script src="pruef.js"></script>
+<script>
+// Welches Auto hängt an welcher Wallbox – fest, über den Stecker, über die
+// Ladeleistung, und was dabei gilt.
+
+const GRUND = () => ({
+  "sensor.pv": zustand("sensor.pv", 8000, "W"),
+  "sensor.haus": zustand("sensor.haus", 12000, "W"),
+  "sensor.netz": zustand("sensor.netz", 0, "W"),
+});
+const ZWEI_WB = [
+  { power: "sensor.wb1", name: "WB1", plug: "binary_sensor.wb1_plug" },
+  { power: "sensor.wb2", name: "WB2", plug: "binary_sensor.wb2_plug" },
+];
+const ZWEI_AUTOS = [
+  { soc: "sensor.a1_soc", name: "Auto A", plug: "binary_sensor.a1_plug", power: "sensor.a1_power" },
+  { soc: "sensor.a2_soc", name: "Auto B", plug: "binary_sensor.a2_plug", power: "sensor.a2_power" },
+];
+// Auto A wurde mit WB2 zusammen eingesteckt, Auto B mit WB1.
+const steckerLage = (extra) => ({ ...GRUND(),
+  "sensor.wb1": zustand("sensor.wb1", 11000, "W"),
+  "sensor.wb2": zustand("sensor.wb2", 3700, "W"),
+  "binary_sensor.wb1_plug": zustand("binary_sensor.wb1_plug", "on", null, 0),
+  "binary_sensor.wb2_plug": zustand("binary_sensor.wb2_plug", "on", null, 900),
+  "binary_sensor.a1_plug": zustand("binary_sensor.a1_plug", "on", null, 930),
+  "binary_sensor.a2_plug": zustand("binary_sensor.a2_plug", "on", null, 20),
+  "sensor.a1_soc": zustand("sensor.a1_soc", 40, "%"),
+  "sensor.a2_soc": zustand("sensor.a2_soc", 80, "%"),
+  ...(extra || {}) });
+// Auto A nimmt 3,6 kW, Auto B 10,8 kW – also A an WB2, B an WB1.
+const leistungsLage = (extra) => ({ ...GRUND(),
+  "sensor.wb1": zustand("sensor.wb1", 11000, "W"),
+  "sensor.wb2": zustand("sensor.wb2", 3700, "W"),
+  "sensor.a1_power": zustand("sensor.a1_power", 3.6, "kW"),
+  "sensor.a2_power": zustand("sensor.a2_power", 10800, "W"),
+  "sensor.a1_soc": zustand("sensor.a1_soc", 40, "%"),
+  "sensor.a2_soc": zustand("sensor.a2_soc", 80, "%"),
+  ...(extra || {}) });
+
+const namen = (k) => k._readValues().wallboxes.map((w) => (w.hatAuto ? w.carName : null));
+const j = (x) => JSON.stringify(x);
+const bau = (cfg, states) => karte({ house: "sensor.haus", grid: "sensor.netz",
+  sources: [{ power: "sensor.pv" }], ...cfg }, states);
+const pruefe = (name, cfg, states, soll) => {
+  const { k, box } = bau(cfg, states);
+  ok(name, j(namen(k)), j(soll));
+  box.remove();
+};
+
+(async () => {
+  pruefe("aus: der Reihe nach zugeordnet", { wallboxes: ZWEI_WB, cars: ZWEI_AUTOS }, steckerLage(), ["Auto A", "Auto B"]);
+  pruefe("Stecker: über Kreuz richtig", { wallboxes: ZWEI_WB, cars: ZWEI_AUTOS, car_match: "plug" }, steckerLage(), ["Auto B", "Auto A"]);
+  pruefe("Leistung: über Kreuz richtig, kW und W gemischt", { wallboxes: ZWEI_WB, cars: ZWEI_AUTOS, car_match: "power" }, leistungsLage(), ["Auto B", "Auto A"]);
+
+  // Zu weit auseinander: lieber kein Auto als das falsche. Da beide frei
+  // bleiben, greift auch die Eindeutigkeit nicht.
+  pruefe("Stecker: zu weit auseinander bleibt leer",
+    { wallboxes: ZWEI_WB, cars: ZWEI_AUTOS, car_match: "plug" },
+    steckerLage({ "binary_sensor.a1_plug": zustand("binary_sensor.a1_plug", "on", null, 30000),
+                  "binary_sensor.a2_plug": zustand("binary_sensor.a2_plug", "on", null, 60000) }), [null, null]);
+  pruefe("Leistung: zu weit daneben bleibt leer",
+    { wallboxes: ZWEI_WB, cars: ZWEI_AUTOS, car_match: "power" },
+    leistungsLage({ "sensor.a1_power": zustand("sensor.a1_power", 100, "W"),
+                    "sensor.a2_power": zustand("sensor.a2_power", 200, "W") }), [null, null]);
+  pruefe("Stecker: größerer Spielraum ordnet beide zu",
+    { wallboxes: ZWEI_WB, cars: ZWEI_AUTOS, car_match: "plug", car_match_window: 1200 },
+    steckerLage({ "binary_sensor.a1_plug": zustand("binary_sensor.a1_plug", "on", null, 1500),
+                  "binary_sensor.a2_plug": zustand("binary_sensor.a2_plug", "on", null, 600) }), ["Auto B", "Auto A"]);
+
+  // Einmal entschieden, dann gehalten.
+  {
+    const { k, box } = bau({ wallboxes: ZWEI_WB, cars: ZWEI_AUTOS, car_match: "power" }, leistungsLage());
+    ok("gehalten: erst richtig", j(namen(k)), j(["Auto B", "Auto A"]));
+    k.hass = { states: leistungsLage({ "sensor.a1_power": zustand("sensor.a1_power", 10800, "W") }), themes: {}, language: "de" };
+    ok("gehalten: springt nicht um", j(namen(k)), j(["Auto B", "Auto A"]));
+    box.remove();
+  }
+  // Kabel gezogen: frei.
+  {
+    const { k, box } = bau({ wallboxes: ZWEI_WB, cars: ZWEI_AUTOS, car_match: "plug" }, steckerLage());
+    k.hass = { states: steckerLage({ "binary_sensor.wb1_plug": zustand("binary_sensor.wb1_plug", "off", null, 5000),
+      "sensor.wb1": zustand("sensor.wb1", 0, "W") }), themes: {}, language: "de" };
+    ok("lösen: WB1 wieder frei", namen(k)[0], null);
+    ok("lösen: WB2 bleibt", namen(k)[1], "Auto A");
+    box.remove();
+  }
+
+  // Fest an der Wallbox schlägt alles und sperrt das Auto.
+  {
+    const { k, box } = bau({ wallboxes: [{ ...ZWEI_WB[0], car: "sensor.a2_soc", car_name: "Fest B" }, ZWEI_WB[1]],
+      cars: ZWEI_AUTOS, car_match: "plug" }, steckerLage());
+    ok("fest an Wallbox: Eintrag bleibt", namen(k)[0], "Fest B");
+    ok("fest an Wallbox: das andere Auto für WB2", namen(k)[1], "Auto A");
+    box.remove();
+  }
+  // Fest vom Auto aus.
+  pruefe("Auto wählt seine Wallbox", { wallboxes: ZWEI_WB, cars: [ZWEI_AUTOS[0], { ...ZWEI_AUTOS[1], wallbox: 1 }], car_match: "power" },
+    leistungsLage(), ["Auto B", "Auto A"]);
+  pruefe("feste Wahl gilt auch ohne car_match", { wallboxes: ZWEI_WB, cars: [ZWEI_AUTOS[0], { ...ZWEI_AUTOS[1], wallbox: 2 }] },
+    leistungsLage(), ["Auto A", "Auto B"]);
+  {
+    const { k, box } = bau({ wallboxes: ZWEI_WB, cars: [{ ...ZWEI_AUTOS[0], wallbox: 1 }, { ...ZWEI_AUTOS[1], wallbox: 1 }],
+      car_match: "power" }, leistungsLage());
+    ok("zwei Autos an einem Kabel: das erste gewinnt", namen(k)[0], "Auto A");
+    ok("das zweite wandert nicht anderswohin", namen(k)[1], null);
+    box.remove();
+  }
+  pruefe("unsinnige Wallboxnummer stört nicht", { wallboxes: ZWEI_WB, cars: [ZWEI_AUTOS[0], { ...ZWEI_AUTOS[1], wallbox: 9 }],
+    car_match: "power" }, leistungsLage(), ["Auto B", "Auto A"]);
+
+  // Eindeutigkeit: bleibt nur eins übrig, gehört es zusammen.
+  pruefe("eindeutig: das übrige Auto kommt sofort", { wallboxes: ZWEI_WB, cars: ZWEI_AUTOS, car_match: "power" },
+    leistungsLage({ "sensor.a1_power": zustand("sensor.a1_power", 0, "W") }), ["Auto B", "Auto A"]);
+  pruefe("abgeschaltet: WB2 bleibt vorerst leer", { wallboxes: ZWEI_WB, cars: ZWEI_AUTOS, car_match: "power", car_match_unique: false },
+    leistungsLage({ "sensor.a1_power": zustand("sensor.a1_power", 0, "W") }), ["Auto B", null]);
+  pruefe("ein abgestecktes Auto wird nicht zugeschlagen", { wallboxes: ZWEI_WB, cars: ZWEI_AUTOS, car_match: "plug" },
+    steckerLage({ "binary_sensor.a1_plug": zustand("binary_sensor.a1_plug", "off", null, 930),
+                  "binary_sensor.a2_plug": zustand("binary_sensor.a2_plug", "on", null, 20) }), ["Auto B", null]);
+  pruefe("zwei offen, zwei frei: nichts wird geraten", { wallboxes: ZWEI_WB, cars: ZWEI_AUTOS, car_match: "power" },
+    leistungsLage({ "sensor.a1_power": zustand("sensor.a1_power", 0, "W"), "sensor.a2_power": zustand("sensor.a2_power", 0, "W") }), [null, null]);
+
+  // Steckerzustände.
+  pruefe("ready gilt nicht als eingesteckt", { wallboxes: ZWEI_WB, cars: ZWEI_AUTOS, car_match: "plug" },
+    steckerLage({ "binary_sensor.wb1_plug": zustand("binary_sensor.wb1_plug", "ready", null, 0),
+                  "binary_sensor.wb2_plug": zustand("binary_sensor.wb2_plug", "ready", null, 900) }), [null, null]);
+  pruefe("Statuswerte werden verstanden", { wallboxes: ZWEI_WB, cars: ZWEI_AUTOS, car_match: "plug" },
+    steckerLage({ "binary_sensor.wb1_plug": zustand("binary_sensor.wb1_plug", "CHARGING", null, 0),
+                  "binary_sensor.wb2_plug": zustand("binary_sensor.wb2_plug", "AWAITING_START", null, 900),
+                  "binary_sensor.a1_plug": zustand("binary_sensor.a1_plug", "Complete", null, 930),
+                  "binary_sensor.a2_plug": zustand("binary_sensor.a2_plug", "Charging", null, 20) }), ["Auto B", "Auto A"]);
+  pruefe("unklarer Zustand ordnet nicht zu", { wallboxes: ZWEI_WB, cars: ZWEI_AUTOS, car_match: "plug" },
+    steckerLage({ "binary_sensor.a1_plug": zustand("binary_sensor.a1_plug", null, null, 930),
+                  "binary_sensor.a2_plug": zustand("binary_sensor.a2_plug", "irgendwas", null, 20) }), [null, null]);
+  pruefe("ohne Autos bleibt es leer", { wallboxes: ZWEI_WB, car_match: "plug" }, steckerLage(), [null, null]);
+
+  fertig();
+})();
+</script>

@@ -1,0 +1,110 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Prüfstand: Einspeiselimit</title>
+<body style="background:#0B0E13;margin:0">
+<script src="../power-flow-card-plus-mobile.js"></script>
+<script src="pruef.js"></script>
+<script>
+// Ist ein Einspeiselimit bekannt, wird der Ring ums Netz zur Anzeige: er
+// füllt sich mit der Einspeisung, voll heißt gedeckelt. Das Limit steht als
+// Etikett über dem Kreis.
+
+const BASIS = { sources: [{ power: "sensor.pv" }], grid: "sensor.netz", house: "sensor.haus" };
+const lage = (pv, netz, haus, extra) => ({
+  "sensor.pv": zustand("sensor.pv", pv, "W"),
+  "sensor.netz": zustand("sensor.netz", netz, "W"),
+  "sensor.haus": zustand("sensor.haus", haus, "W"),
+  ...(extra || {}),
+});
+const sensor = (wert, einheit) => ({ "sensor.limit": zustand("sensor.limit", wert, einheit) });
+
+function netzBild(cfg, states) {
+  const { k, box, svg } = karte({ ...BASIS, ...cfg }, states);
+  const v = k._readValues();
+  const texte = [...svg.querySelectorAll("text")].map((t) => t.textContent);
+  const etikett = svg.querySelector("text.limit-etikett");
+  const netz = [...svg.querySelectorAll("g")].find((g) => (g.textContent || "").includes("Netz"));
+  // Eine Anzeige hat Teilstriche; der schlichte Ring nicht.
+  const striche = netz ? netz.querySelectorAll("line").length : 0;
+  box.remove();
+  return {
+    v, striche,
+    etikett: etikett ? etikett.textContent : null,
+    detail: texte.find((t) => t === "Einspeisung" || t === "am Limit" || t === "Bezug") || null,
+  };
+}
+
+(async () => {
+  // 10 kW Sonne, 4 kW Haus, 6 kW Einspeisung.
+  const EIN = lage(10000, -6000, 4000);
+
+  let t = netzBild({}, EIN);
+  ok("ohne Limit: kein Etikett", t.etikett, null);
+  ok("ohne Limit: schlichter Ring ohne Teilstriche", t.striche, 0);
+  ok("ohne Limit: Detail Einspeisung", t.detail, "Einspeisung");
+
+  // Limit als Sensor in Watt: 8 kW, 6 von 8 sind 75 %.
+  t = netzBild({ grid_limit: "sensor.limit" }, lage(10000, -6000, 4000, sensor(8000, "W")));
+  ok("Watt: Limit erkannt", t.v.gridLimit, 8000);
+  nah("Watt: Anteil 75 %", t.v.gridLimitFrac, 0.75);
+  ok("Watt: Etikett zeigt das Limit", t.etikett, "Limit 8.00 kW");
+  ok("Watt: Ring ist Anzeige mit Teilstrichen", t.striche > 0, true);
+  ok("Watt: noch nicht am Limit", t.detail, "Einspeisung");
+
+  t = netzBild({ grid_limit: "sensor.limit" }, lage(10000, -6000, 4000, sensor(8, "kW")));
+  ok("kW: umgerechnet", t.v.gridLimit, 8000);
+
+  // Am Limit: 6 kW bei 6 kW.
+  t = netzBild({ grid_limit: "sensor.limit" }, lage(10000, -6000, 4000, sensor(6000, "W")));
+  ok("am Limit: erkannt", t.v.amLimit, true);
+  ok("am Limit: Detail sagt es", t.detail, "am Limit");
+
+  // Knapp darunter zählt auch – die letzten Prozent verschluckt der Regler.
+  t = netzBild({ grid_limit: "sensor.limit" }, lage(10000, -6000, 4000, sensor(6150, "W")));
+  ok("97 %: gilt als am Limit", t.v.amLimit, true);
+  t = netzBild({ grid_limit: "sensor.limit" }, lage(10000, -6000, 4000, sensor(6500, "W")));
+  ok("92 %: noch nicht", t.v.amLimit, false);
+
+  // Prozent ohne Spitzenleistung: nur das Etikett, kein Ring.
+  t = netzBild({ grid_limit: "sensor.limit" }, lage(10000, -6000, 4000, sensor(70, "%")));
+  ok("Prozent ohne kWp: kein Watt-Limit", t.v.gridLimit, null);
+  ok("Prozent ohne kWp: Prozent gemerkt", t.v.gridLimitPct, 70);
+  ok("Prozent ohne kWp: Etikett in Prozent", t.etikett, "Limit 70 %");
+  ok("Prozent ohne kWp: schlichter Ring", t.striche, 0);
+
+  // Mit 10 kWp: 70 % sind 7 kW, 6 von 7 sind 86 %.
+  t = netzBild({ grid_limit: "sensor.limit", pv_peak: 10 }, lage(10000, -6000, 4000, sensor(70, "%")));
+  ok("Prozent mit kWp: in Watt", t.v.gridLimit, 7000);
+  nah("Prozent mit kWp: Anteil", t.v.gridLimitFrac, 6000 / 7000);
+  ok("Prozent mit kWp: Etikett in Watt", t.etikett, "Limit 7.00 kW");
+  ok("Prozent mit kWp: Ring ist Anzeige", t.striche > 0, true);
+
+  // Feste Zahl in der Konfiguration gilt als Watt.
+  t = netzBild({ grid_limit: 7000 }, EIN);
+  ok("feste Zahl: gilt als Watt", t.v.gridLimit, 7000);
+  ok("feste Zahl: Etikett", t.etikett, "Limit 7.00 kW");
+
+  // Beim Bezug gilt kein Limit: schlichter Ring, aber das Etikett bleibt.
+  t = netzBild({ grid_limit: 7000 }, lage(1000, 3000, 4000));
+  ok("Bezug: schlichter Ring", t.striche, 0);
+  ok("Bezug: Detail Bezug", t.detail, "Bezug");
+  ok("Bezug: Etikett bleibt", t.etikett, "Limit 7.00 kW");
+
+  // Unlesbarer Sensor: so, als gäbe es kein Limit.
+  t = netzBild({ grid_limit: "sensor.limit" }, lage(10000, -6000, 4000, sensor(null, "W")));
+  ok("unlesbar: kein Limit", t.v.gridLimit, null);
+  ok("unlesbar: kein Etikett", t.etikett, null);
+
+  // Editor: beide Felder auf der Netz-Seite, Werte kommen an.
+  const felderNetz = JSON.stringify(SEITEN_SCHEMA.grid({ grid_mode: "single" }));
+  ok("Editor: Limitfeld auf der Netz-Seite", felderNetz.includes("grid_limit"), true);
+  ok("Editor: Spitzenleistung auf der Netz-Seite", felderNetz.includes("pv_peak"), true);
+  const zurueck = fromForm({ ...toForm({ type: "x" }), grid_limit: "sensor.limit", pv_peak: 9.9 }, { type: "x" });
+  ok("Editor: Limit gespeichert", zurueck.grid_limit, "sensor.limit");
+  ok("Editor: kWp gespeichert", zurueck.pv_peak, 9.9);
+  const fest = fromForm(toForm({ type: "x", grid_limit: 7000 }), { type: "x", grid_limit: 7000 });
+  ok("Editor: feste Zahl bleibt erhalten", fest.grid_limit, 7000);
+
+  fertig();
+})();
+</script>

@@ -179,6 +179,8 @@ colors:
 | `pv`, `external` | – | Ältere Schreibweise, wird auf die ersten beiden Quellen abgebildet. |
 | `grid` | – | Netzleistung, positiv = Bezug. Auch als Paar `consumption`/`production`. |
 | `house` | – | Hausverbrauch gesamt |
+| `grid_limit` | – | Einspeiselimit: Entität in W, kW oder %, oder feste Zahl in W. Siehe unten. |
+| `pv_peak` | – | Spitzenleistung der Anlage in kWp – nur nötig, wenn das Limit in % kommt |
 | `autarky` | – | Optional: eigener Sensor in % statt der Rechnung. Ist er nicht lesbar, rechnet die Karte und schreibt ein ≈ davor. |
 | `self_consumption` | – | Wie `autarky` |
 | `batteries` | `[]` | Höchstens zwei. Je `power` **oder** `charge`+`discharge`, dazu `soc`, `name`, `icon`, `included_in_house`. |
@@ -245,6 +247,41 @@ external: sensor.zusatz
 Sie wird auf die ersten beiden Quellen abgebildet, samt `icons.pv`,
 `icons.external`, `colors.pv` und `colors.external`. An bestehenden Karten
 ist nichts zu ändern.
+
+---
+
+## Das Einspeiselimit
+
+Wer eine Einspeisebegrenzung hat – die 70-Prozent-Regel, eine dynamische
+Vorgabe des Netzbetreibers, eine Einstellung am Speicher –, sieht sonst nicht,
+wann sie greift. Mit `grid_limit` wird **der Ring ums Netz zur Anzeige**: er
+füllt sich mit der Einspeisung, voll heißt gedeckelt. Darunter steht dann
+„am Limit" statt „Einspeisung". Das Limit selbst steht klein über dem Kreis.
+
+```yaml
+grid_limit: sensor.s10e_pro_einspeiselimit     # in W oder kW
+```
+
+Kommt das Limit **in Prozent** – so melden es viele Anlagen –, braucht die
+Karte die Spitzenleistung, um daraus Watt zu machen:
+
+```yaml
+grid_limit: sensor.s10e_pro_derate_percent      # z. B. 70
+pv_peak: 9.9                                    # kWp
+```
+
+Ohne `pv_peak` bleibt es beim Etikett „Limit 70 %" über dem Kreis; der Ring
+kann sich dann nicht füllen, weil die Karte nicht weiß, wieviel 70 % sind.
+
+Eine feste Zahl geht auch – für alle, deren Limit nie wechselt:
+
+```yaml
+grid_limit: 7000
+```
+
+Als „am Limit" gilt eine Einspeisung ab 97 % des Limits; die letzten Prozent
+verschluckt der Regler ohnehin. Beim Bezug gilt kein Limit, dort bleibt der
+schlichte Ring – das Etikett bleibt, denn das Limit gilt weiterhin.
 
 ---
 
@@ -603,16 +640,17 @@ Dass keine Wallbox zu sehen ist, ist **kein Fehler**: Es lädt gerade nichts.
 
 ## Entwickeln
 
-Zwei Prüfstände liegen bei, beide brauchen nur einen kleinen Webserver:
+Die Prüfstände liegen unter [`test/`](test/LIESMICH.md) und laufen ohne
+Home Assistant im Browser. Ein kleiner Webserver genügt:
 
-```bash
-cd power-flow-card-plus-mobile && python3 -m http.server 8777
+```powershell
+powershell -File test\serve.ps1
 ```
 
-* `test/lokaler-test.html` – die Karte in neun Szenarien und drei Bildschirmgrößen,
-  mit nachgebautem `hass`-Objekt
-* `test/editor-test.html` – die Editor-Logik: Navigation, Listen, Umschalter,
-  verlustfreie Hin- und Rückwandlung der Konfiguration
+* **Automatisch**, rund 200 Prüfungen: `linien`, `quellen`, `autos`, `kacheln`,
+  `editor`, `limit` – jede Seite meldet „ALLE n GRUEN" oder ihre Fehlschläge.
+* **Zum Anschauen**: `lokaler-test.html` zeigt die Karte in mehreren Szenarien
+  und Bildschirmgrößen, `editor-test.html` den Editor.
 
 ---
 

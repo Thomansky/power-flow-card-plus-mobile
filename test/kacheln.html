@@ -1,0 +1,182 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Prüfstand: Kacheln, Bilanz, Darstellung</title>
+<body style="background:#0B0E13;margin:0">
+<script src="../power-flow-card-plus-mobile.js"></script>
+<script src="pruef.js"></script>
+<script>
+// Autarkie, Eigenverbrauch, Bilanz, helle Darstellung, Fließpunkte nach
+// Herkunft, und dass Hilfetexte dort stehen, wo sie hingehören.
+
+const st = (w) => {
+  const s = {};
+  Object.keys(w).forEach((k) => {
+    s["sensor." + k] = zustand("sensor." + k, w[k], k.startsWith("p_") ? "%" : "W");
+  });
+  return s;
+};
+const BASIS = { sources: [{ power: "sensor.pv" }], grid: "sensor.netz", house: "sensor.haus" };
+// 10 kW Sonne, 2 kW Bezug, 8 kW Haus → Autarkie 75 %
+const W = { pv: 10000, netz: 2000, haus: 8000, p_aut: 93, p_eig: 61 };
+
+const kacheln = (cfg, w) => {
+  const { k, box } = karte(cfg, st(w));
+  const aus = [...k.shadowRoot.querySelectorAll(".tile")].map((t) => ({
+    wert: t.querySelector(".t-value").textContent,
+    hinweis: t.getAttribute("title"),
+    stuecke: t.querySelectorAll(".t-fill").length,
+  }));
+  const v = k._readValues();
+  box.remove();
+  return { aus, v };
+};
+
+(async () => {
+  // --- Autarkie und Eigenverbrauch ------------------------------------------
+  let { aus, v } = kacheln(BASIS, W);
+  nah("gerechnete Autarkie 75 %", v.autarky, 0.75);
+  ok("ohne Sensor: Zahl ohne Zeichen", aus[0].wert, "75 %");
+  ok("ohne Sensor: kein Hinweis", aus[0].hinweis, null);
+
+  const MIT = { ...BASIS, autarky: "sensor.p_aut", self_consumption: "sensor.p_eig" };
+  ({ aus, v } = kacheln(MIT, W));
+  nah("Sensor gewinnt: Autarkie 93 %", v.autarky, 0.93);
+  nah("Sensor gewinnt: Eigenverbrauch 61 %", v.selfConsumption, 0.61);
+  ok("lesbarer Sensor: Zahl ohne Zeichen", aus[0].wert, "93 %");
+
+  ({ aus, v } = kacheln(MIT, { ...W, p_aut: null }));
+  nah("unlesbar: Rückfall auf die Rechnung", v.autarky, 0.75);
+  ok("unlesbar: Zeichen davor", aus[0].wert, "≈75 %");
+  ok("unlesbar: Hinweis am Kästchen", (aus[0].hinweis || "").includes("nicht lesbar"), true);
+  ok("die andere Kachel bleibt unberührt", aus[1].wert.startsWith("≈"), false);
+
+  ({ aus } = kacheln(MIT, { ...W, p_eig: null }));
+  ok("Eigenverbrauch: Zeichen davor", aus[1].wert.startsWith("≈"), true);
+
+  ok("alle Balken einfarbig", aus.every((t) => t.stuecke === 1), true);
+  ({ aus } = kacheln({ ...MIT, autarky_mix: true }, W));
+  ok("alte Einstellung autarky_mix stört nicht", aus.every((t) => t.stuecke === 1), true);
+
+  // Werte außerhalb 0–100 werden gekappt.
+  ({ v } = kacheln(MIT, { ...W, p_aut: 140 }));
+  ok("Sensor über 100 wird gekappt", v.autarky, 1);
+
+  // --- Bilanz ---------------------------------------------------------------
+  {
+    const s = st({ pv: 6000, netz: 1000, haus: 5000 });
+    Object.assign(s, { "sensor.b1": zustand("sensor.b1", -1500, "W"), "sensor.b2": zustand("sensor.b2", 2000, "W"),
+      "sensor.soc": zustand("sensor.soc", 50, "%"), "sensor.wb": zustand("sensor.wb", 3000, "W") });
+    const { k, box } = karte({ ...BASIS,
+      batteries: [{ power: "sensor.b1", soc: "sensor.soc" }, { power: "sensor.b2", soc: "sensor.soc" }],
+      wallboxes: [{ power: "sensor.wb", included_in_house: true }] }, s);
+    const w = k._readValues();
+    ok("Durchsatz = Erzeugung + Bezug + Entladung", w.durchsatz, 6000 + 1000 + 1500);
+    ok("Speicher einzeln, nicht netto: Entladung zählt trotz Ladung", w.durchsatz - 7000, 1500);
+    ok("Wallbox hinter dem Zähler wird herausgerechnet", w.house, 2000);
+    ok("der rohe Zählerwert bleibt erhalten", w.houseRaw, 5000);
+    ok("Autarkie rechnet mit dem Zählerwert", Math.round(w.autarky * 100), 80);
+    ok("Mischung: Sonne, Speicher, Netz", w.houseMix.map((m) => m.key).join(","), "src0,battery,grid");
+    nah("Anteile summieren auf 1", w.houseMix.reduce((a, m) => a + m.anteil, 0), 1);
+    box.remove();
+  }
+
+  // --- Helle Darstellung -----------------------------------------------------
+  const hell = (f) => {
+    const m = String(f).match(/rgba?\((\d+)[,\s]+(\d+)[,\s]+(\d+)/);
+    if (m) return (+m[1] * 299 + +m[2] * 587 + +m[3] * 114) / 1000;
+    let h = String(f).match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+    if (!h) return null;
+    let x = h[1]; if (x.length === 3) x = x[0] + x[0] + x[1] + x[1] + x[2] + x[2];
+    return (parseInt(x.slice(0, 2), 16) * 299 + parseInt(x.slice(2, 4), 16) * 587 + parseInt(x.slice(4, 6), 16) * 114) / 1000;
+  };
+  const kugel = (svg) => [...svg.querySelectorAll("circle")].find((c) => (c.getAttribute("fill") || "").startsWith("#"));
+  {
+    const box = document.createElement("div");
+    box.style.setProperty("--primary-text-color", "rgb(33,33,33)");
+    document.body.appendChild(box);
+    const k = document.createElement("power-flow-card-plus-mobile");
+    k.setConfig({ type: "x", ...BASIS, transparent: true, min_height: 640 });
+    box.appendChild(k);
+    k.hass = { states: st(W), themes: {}, language: "de" };
+    k._render();
+    const svg = k.shadowRoot.querySelector("svg");
+    ok("helles Thema: Kugel ist hell", hell(kugel(svg).getAttribute("fill")) > 200, true);
+    ok("helles Thema: Schrift ist dunkel", hell(svg.querySelector("text").getAttribute("fill")) < 100, true);
+    box.remove();
+  }
+  {
+    const { svg, box } = karte({ ...BASIS, transparent: false }, st(W));
+    ok("eigener Grund: Kugel bleibt dunkel", hell(kugel(svg).getAttribute("fill")) < 40, true);
+    box.remove();
+  }
+
+  // --- Fließpunkte nach Herkunft ------------------------------------------
+  const bahnen = (cfg, w) => {
+    const { svg, box } = karte(cfg, st(w));
+    const aus = [...svg.querySelectorAll("path.flow-dash")].map((p) => ({
+      farbe: p.getAttribute("stroke"), d: p.getAttribute("d"),
+      muster: p.getAttribute("stroke-dasharray").split(" ").map(Number),
+      versatz: parseFloat(p.style.strokeDashoffset || "0"),
+      weg: parseFloat(p.style.getPropertyValue("--ppm-travel")),
+    }));
+    box.remove();
+    return aus;
+  };
+  const proWeg = (b) => { const m = new Map(); b.forEach((x) => m.set(x.d, (m.get(x.d) || 0) + 1)); return m; };
+  {
+    const CFG = { ...BASIS, sources: [{ power: "sensor.pv" }, { power: "sensor.q2" }],
+      batteries: [{ power: "sensor.bat", soc: "sensor.soc" }] };
+    const WM = { pv: 4000, q2: 4000, haus: 9000, netz: 0, bat: -2000, soc: 60 };
+    const ohne = bahnen(CFG, WM);
+    ok("aus: je Weg genau eine Bahn", [...proWeg(ohne).values()].every((n) => n === 1), true);
+    const mit = bahnen({ ...CFG, flow_mix: true }, WM);
+    const mehrfach = [...proWeg(mit).entries()].filter(([, n]) => n > 1);
+    ok("an: es gibt Wege mit mehreren Bahnen", mehrfach.length > 0, true);
+    const startY = (d) => { const m = d.match(/^M ([\d.]+) ([\d.]+)/); return m ? +m[2] : Infinity; };
+    const oben = [...new Set(mit.map((b) => b.d))].filter((d) => startY(d) < 130);
+    ok("Quellleitungen bleiben einfarbig", oben.length > 0 && oben.every((d) => proWeg(mit).get(d) === 1), true);
+    const gemischt = mehrfach.length ? mit.filter((b) => b.d === mehrfach[0][0]) : [];
+    const summen = gemischt.map((b) => b.muster.reduce((a, x) => a + x, 0));
+    ok("alle Bahnen eines Weges: dieselbe Musterlänge", gemischt.length > 0 && Math.max(...summen) - Math.min(...summen) < 0.05, true);
+    ok("der gemischte Weg trägt mehrere Farben", new Set(gemischt.map((b) => b.farbe)).size > 1, true);
+    ok("der Umlauf entspricht der Musterlänge", gemischt.length > 0 &&
+      gemischt.every((b) => Math.abs(Math.abs(b.weg - b.versatz) - summen[0]) < 0.05), true);
+    const einzeln = bahnen({ ...BASIS, flow_mix: true }, { pv: 4000, haus: 4000, netz: 0 });
+    ok("eine Quelle allein: nichts zu mischen", [...proWeg(einzeln).values()].every((n) => n === 1), true);
+  }
+
+  // --- Hilfetexte gehören in HELFER, nicht in die Konfiguration ------------
+  {
+    // Mit allem, was Listen hat – Hilfetexte sind auch schon in Listeneinträge
+    // gerutscht, wo sie das oberste Objekt nicht verraten.
+    const k = document.createElement("power-flow-card-plus-mobile");
+    k.setConfig({ type: "x", house: "sensor.haus", sources: [{ power: "sensor.pv" }],
+      batteries: [{ power: "sensor.b" }], wallboxes: [{ power: "sensor.w" }], cars: [{ soc: "sensor.c" }] });
+    const lange = [];
+    const suche = (o, pfad) => {
+      if (!o || typeof o !== "object") return;
+      for (const [key, v] of Object.entries(o)) {
+        if (typeof v === "string" && v.length > 80) lange.push(pfad + key);
+        else if (typeof v === "object") suche(v, pfad + key + ".");
+      }
+    };
+    suche(k._config, "");
+    ok("keine Hilfetexte in der Konfiguration, auch nicht verschachtelt", lange.join(","), "");
+    // Und keine Beschriftung ist länger als ein kurzer Feldname.
+    const langeLabels = Object.entries(LABELS).filter(([, v]) => v.length > 60).map(([k]) => k);
+    ok("keine Hilfetexte in den Beschriftungen", langeLabels.join(","), "");
+    for (const n of ["plug", "flow_mix", "car_match", "grid_limit", "pv_peak", "invert"]) {
+      ok(`Hilfetext ${n} steht in HELFER`, typeof HELFER[n] === "string" && HELFER[n].length > 40, true);
+    }
+  }
+
+  // --- Leere Konfiguration darf nicht werfen -------------------------------
+  {
+    let heil = true;
+    try { document.createElement("power-flow-card-plus-mobile").setConfig({}); } catch (e) { heil = e.message; }
+    ok("leere Konfiguration wird angenommen", heil, true);
+  }
+
+  fertig();
+})();
+</script>

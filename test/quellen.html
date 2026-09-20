@@ -1,0 +1,149 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Prüfstand: Erzeugungsquellen</title>
+<body style="background:#0B0E13;margin:0">
+<script src="../power-flow-card-plus-mobile.js"></script>
+<script src="pruef.js"></script>
+<script>
+// Bis zu fünf Quellen, alte Schreibweise, Vorzeichen, Antippen.
+
+const W = { qa: 4000, qb: 3000, qc: 2000, qd: 1000, qe: 500, qf: -60,
+            house: 5000, grid: -1000, bat: -2000 };
+const S = {};
+Object.keys(W).forEach((k) => { S["sensor." + k] = zustand("sensor." + k, W[k], "W"); });
+S["sensor.soc"] = zustand("sensor.soc", 60, "%");
+
+(async () => {
+  // --- Alte Schreibweise wird auf die ersten beiden Quellen abgebildet ------
+  {
+    const { k, box } = karte({ pv: "sensor.qa", external: "sensor.qb", house: "sensor.house" }, S);
+    const v = k._readValues();
+    ok("alt: zwei Quellen", v.sources.length, 2);
+    ok("alt: Summe stimmt", v.production, 7000);
+    box.remove();
+  }
+
+  // --- Vier und fünf Quellen ------------------------------------------------
+  const NAMEN = ["Dach Süd", "Dach Nord", "Wind", "BHKW", "Wasser"];
+  for (const n of [4, 5]) {
+    for (const [bw, bh] of [[390, 620], [1000, 500], [340, 900]]) {
+      const { k, svg, box } = karte({ house: "sensor.house", grid: "sensor.grid",
+        sources: NAMEN.slice(0, n).map((nm, i) => ({ power: "sensor.q" + "abcde"[i], name: nm })) }, S, bw, bh);
+      const g = [...svg.querySelectorAll("g")];
+      ok(`${n} Quellen ${bw}x${bh}: alle gezeichnet`,
+        NAMEN.slice(0, n).filter((t) => g.some((x) => (x.textContent || "").includes(t))).length, n);
+      const oben = [...svg.querySelectorAll("circle")]
+        .map((c) => ({ x: +c.getAttribute("cx"), y: +c.getAttribute("cy"), r: +c.getAttribute("r") }))
+        .filter((c) => c.r > 10);
+      const reihe = oben.filter((c) => Math.abs(c.y - Math.min(...oben.map((o) => o.y))) < 2);
+      ok(`${n} Quellen ${bw}x${bh}: Reihe zählt ${n} Knoten`, new Set(reihe.map((c) => Math.round(c.x))).size, n);
+      ok(`${n} Quellen ${bw}x${bh}: Kreise berühren sich nicht`, (() => {
+        for (let i = 0; i < oben.length; i++) for (let j = i + 1; j < oben.length; j++) {
+          const d = Math.hypot(oben[i].x - oben[j].x, oben[i].y - oben[j].y);
+          if (d > 1 && d < oben[i].r + oben[j].r) return false;
+        }
+        return true;
+      })(), true);
+      const vb = svg.getAttribute("viewBox").split(" ").map(Number);
+      ok(`${n} Quellen ${bw}x${bh}: nichts über den Rand`,
+        oben.every((c) => c.x - c.r >= -0.5 && c.x + c.r <= vb[2] + 0.5 && c.y - c.r >= -0.5), true);
+      // Zufuhrlinien halten Abstand.
+      const b = [...svg.querySelectorAll("path[stroke-opacity]")].map((p) => punkte(p, 60));
+      let eng = Infinity;
+      for (let a = 0; a < b.length; a++) for (let c = a + 1; c < b.length; c++) {
+        let m = Infinity;
+        for (const p of b[a]) for (const q of b[c]) m = Math.min(m, Math.hypot(p[0] - q[0], p[1] - q[1]));
+        if (m > 1) eng = Math.min(eng, m);
+      }
+      ok(`${n} Quellen ${bw}x${bh}: Linien halten Abstand`, eng > 8, true);
+      box.remove();
+    }
+  }
+
+  // --- Fünf verschiedene Vorgabefarben --------------------------------------
+  {
+    const { svg, box } = karte({ house: "sensor.house",
+      sources: [0, 1, 2, 3, 4].map((i) => ({ power: "sensor.q" + "abcde"[i] })) }, S, 390, 620);
+    const farben = [...svg.querySelectorAll("path.flow-dash")].map((p) => p.getAttribute("stroke")).slice(0, 5);
+    ok("fünf verschiedene Vorgabefarben", new Set(farben).size, 5);
+    box.remove();
+  }
+
+  // --- Sechs sind zu viel ---------------------------------------------------
+  {
+    let meldung = null;
+    try {
+      document.createElement("power-flow-card-plus-mobile")
+        .setConfig({ type: "x", house: "sensor.house", sources: [1, 2, 3, 4, 5, 6].map(() => ({ power: "sensor.qa" })) });
+    } catch (e) { meldung = e.message; }
+    ok("sechs Quellen werden abgelehnt", (meldung || "").includes("fünf"), true);
+    ok("Editor: höchstens fünf", KIND.sources.max, 5);
+  }
+
+  // --- Mehrere Sensoren je Quelle werden addiert ----------------------------
+  {
+    const { k, box } = karte({ house: "sensor.house", sources: [{ power: ["sensor.qa", "sensor.qb"] }] }, S);
+    ok("mehrere Sensoren addiert", k._readValues().sources[0].power, 7000);
+    box.remove();
+  }
+
+  // --- Vorzeichen umdrehen, negative Werte bleiben ------------------------
+  const quellBahn = (svg) => [...svg.querySelectorAll("svg path.flow-dash")]
+    .find((p) => (p.getAttribute("stroke") || "").toUpperCase() === "#FFC300");
+  {
+    let r = karte({ house: "sensor.house", grid: "sensor.grid", sources: [{ power: "sensor.qa", invert: true }] }, S);
+    let v = r.k._readValues();
+    ok("umgedreht: Vorzeichen kippt", v.sources[0].power, -4000);
+    ok("umgedreht: zählt nicht als Erzeugung", v.production, 0);
+    r.box.remove();
+
+    r = karte({ house: "sensor.house", grid: "sensor.grid", sources: [{ power: "sensor.qf", invert: true }] }, S);
+    v = r.k._readValues();
+    ok("negativ gemeldet, umgedreht: liefert", v.sources[0].power, 60);
+    ok("und zählt als Erzeugung", v.production, 60);
+    r.box.remove();
+
+    r = karte({ house: "sensor.house", grid: "sensor.grid", sources: [{ power: "sensor.qf", name: "WR 3" }] }, S);
+    v = r.k._readValues();
+    ok("Bereitschaft: Wert bleibt negativ", v.sources[0].power, -60);
+    ok("Bereitschaft: zählt nicht als Erzeugung", v.production, 0);
+    ok("Bereitschaft: der negative Wert steht am Kreis",
+      [...r.svg.querySelectorAll("text")].some((t) => t.textContent.includes("-60")), true);
+    const bahn = quellBahn(r.svg);
+    ok("Bereitschaft: die Linie fließt", !!bahn, true);
+    ok("Bereitschaft: sie läuft rückwärts",
+      bahn ? parseFloat(bahn.style.getPropertyValue("--ppm-travel")) > 0 : null, true);
+    r.box.remove();
+
+    r = karte({ house: "sensor.house", grid: "sensor.grid", sources: [{ power: "sensor.qa" }] }, S);
+    const vor = quellBahn(r.svg);
+    ok("liefernd: sie läuft vorwärts",
+      vor ? parseFloat(vor.style.getPropertyValue("--ppm-travel")) < 0 : null, true);
+    r.box.remove();
+
+    ok("Editor kennt den Schalter", JSON.stringify(KIND.sources.schema({})).includes("invert"), true);
+    ok("aus steht nicht in der Konfiguration",
+      KIND.sources.fromForm({ power_sources: ["sensor.qa"], invert: false }).invert, undefined);
+    ok("an landet in der Konfiguration",
+      KIND.sources.fromForm({ power_sources: ["sensor.qa"], invert: true }).invert, true);
+  }
+
+  // --- Antippen: jede Quellkugel hat eine Trefferfläche ----------------------
+  {
+    const { k, svg, box } = karte({ house: "sensor.house", grid: "sensor.grid",
+      sources: [{ power: "sensor.qa", name: "Einzeln" }, { power: ["sensor.qb", "sensor.qc"], name: "Mehrere" }] }, S);
+    const antippbar = [...svg.querySelectorAll("g.node-hit")];
+    const titel = antippbar.map((g) => g.textContent || "");
+    ok("Quelle mit einem Sensor ist antippbar", titel.some((t) => t.includes("Einzeln")), true);
+    ok("Quelle mit mehreren Sensoren ist antippbar", titel.some((t) => t.includes("Mehrere")), true);
+    let gemeldet = null;
+    k.addEventListener("hass-action", (ev) => { gemeldet = ev.detail.config.entity; });
+    antippbar.find((g) => (g.textContent || "").includes("Mehrere"))
+      .querySelector("circle[fill='transparent']").dispatchEvent(new Event("click", { bubbles: true }));
+    ok("gemeldet wird der erste Sensor der Quelle", gemeldet, "sensor.qb");
+    box.remove();
+  }
+
+  fertig();
+})();
+</script>
