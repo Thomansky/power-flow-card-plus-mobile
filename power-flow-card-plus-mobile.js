@@ -8,7 +8,7 @@
  * https://github.com/thomansky/power-flow-card-plus-mobile
  */
 
-const PPM_VERSION = "1.9.0";
+const PPM_VERSION = "1.10.0";
 
 console.info(
   `%c POWER-FLOW-CARD-PLUS-MOBILE %c v${PPM_VERSION} `,
@@ -574,6 +574,12 @@ class PowerflowPlusMobileCard extends HTMLElement {
       // Einspeiselimit: eine Entität in W, kW oder %, oder eine feste Zahl
       // in Watt. Kommt es in Prozent, braucht die Karte die Spitzenleistung
       // der Anlage, um daraus Watt zu machen – sonst bleibt es beim Etikett.
+      // Zähler für den gemeinsamen Strang der Ladespalten. Ohne ihn addiert
+      // die Karte die einzelnen Wallboxen; mit ihm gilt der gemessene Wert.
+      wallbox_total: (() => {
+        const t = config.wallbox_total ?? null;
+        return Array.isArray(t) ? t.filter(Boolean) : t;
+      })(),
       grid_limit: config.grid_limit ?? null,
       pv_peak: Number.isFinite(config.pv_peak) && config.pv_peak > 0 ? config.pv_peak : null,
       // Optional: gemessene Werte statt gerechneter.
@@ -708,6 +714,7 @@ class PowerflowPlusMobileCard extends HTMLElement {
       .concat(c.sources.flatMap((q) => (Array.isArray(q.power) ? q.power : [q.power])))
       .concat(ausBip(c.grid))
       .concat(c.batteries.flatMap((b) => ausBip(b.power).concat([b.soc])))
+      .concat(Array.isArray(c.wallbox_total) ? c.wallbox_total : [c.wallbox_total])
       .concat(c.wallboxes.flatMap((w) =>
         (Array.isArray(w.power) ? w.power : [w.power]).concat([w.car, w.plug])))
       .concat(c.cars.flatMap((x) => [x.soc, x.plug, x.power]))
@@ -1051,7 +1058,14 @@ class PowerflowPlusMobileCard extends HTMLElement {
     const batteryPower = batteries.reduce((a, b) => a + z(b.power), 0);
     const socList = batteries.map((b) => b.soc).filter((v) => v != null);
     const batterySoc = socList.length ? socList.reduce((a, b) => a + b, 0) / socList.length : null;
-    const wallboxTotal = wallboxes.reduce((a, w) => a + Math.max(0, z(w.power)), 0);
+    // Was der gemeinsame Strang der Ladespalten trägt. Ist ein Zähler
+    // hinterlegt, gilt er – gemessen schlägt addiert. Der Zähler sitzt am
+    // Abzweig und sieht deshalb auch, was die einzelnen Wallboxen nicht
+    // melden: Verluste, oder einen dritten Verbraucher am selben Kreis.
+    const wallboxSumme = wallboxes.reduce((a, w) => a + Math.max(0, z(w.power)), 0);
+    const wallboxZaehler = this._sum(c.wallbox_total);
+    const wallboxTotalGemessen = wallboxZaehler != null;
+    const wallboxTotal = wallboxTotalGemessen ? Math.max(0, wallboxZaehler) : wallboxSumme;
 
     const gridImport = Math.max(0, z(grid));
     const gridExport = Math.max(0, -z(grid));
@@ -1171,7 +1185,7 @@ class PowerflowPlusMobileCard extends HTMLElement {
       batteryCharge: Math.max(0, batteryPower),
       batteryDischarge: Math.max(0, -batteryPower),
       batterySoc,
-      wallboxTotal,
+      wallboxTotal, wallboxSumme, wallboxTotalGemessen,
       gridImport, gridExport,
       consumption,
       autarky, selfConsumption, autarkyErsatz, selfErsatz,
@@ -1540,10 +1554,15 @@ class PowerflowPlusMobileCard extends HTMLElement {
     // Der gemeinsame Strang trägt beide Ladeleistungen und bekommt die Farbe
     // der stärkeren – stehen alle Wallboxen auf einer Farbe, was die Vorgabe
     // ist, macht das ohnehin keinen Unterschied.
+    //
+    // Ist ein Zähler hinterlegt, trägt der Strang dessen Wert. Er darf dann
+    // von der Summe der beiden Äste abweichen; das ist eine Aussage über die
+    // Anlage, nicht über die Karte – genau wie die Lücke am Verteilknoten.
     if (aktiv.length === 2) {
-      put("wbStamm",
-        aktiv.reduce((a, w) => a + Math.max(0, z(w.power)), 0),
-        PAL.wb[aktiv[0].index % PAL.wb.length]);
+      const amStrang = v.wallboxTotalGemessen
+        ? v.wallboxTotal
+        : aktiv.reduce((a, w) => a + Math.max(0, z(w.power)), 0);
+      put("wbStamm", amStrang, PAL.wb[aktiv[0].index % PAL.wb.length]);
     }
 
     // Woher der Strom kommt: je Quelle ein Anteil, in ihrer eigenen Farbe.
@@ -2059,6 +2078,7 @@ const LABELS = {
   grid_consumption: "Netz – Bezug",
   grid_production: "Netz – Einspeisung",
   grid_limit: "Einspeiselimit (optional)",
+  wallbox_total: "Zähler für beide zusammen (optional)",
   pv_peak: "Spitzenleistung der Anlage (kWp)",
   power_mode: "Bauart der Sensoren",
   power: "Leistung (positiv = lädt)",
@@ -2105,6 +2125,11 @@ const computeLabel = (s) => LABELS[s.name] || s.name;
 
 /** Kleingedrucktes unter einzelnen Feldern – nur wo es wirklich hilft. */
 const HELFER = {
+  wallbox_total:
+    "Der Strang, an dem beide Ladespalten hängen, trägt sonst die Summe der " +
+    "einzelnen Wallboxen. Ist hier ein Zähler hinterlegt, gilt dessen Wert – " +
+    "er sitzt am Abzweig und sieht auch, was die einzelnen Wallboxen nicht " +
+    "melden. Wirkt nur, solange zwei Wallboxen gleichzeitig laden.",
   wallbox:
     "Fest zuordnen, ohne Suche. „Selbst zuordnen“ überlässt es der " +
     "Einstellung unter der Liste. Was an der Wallbox selbst unter „Auto an " +
@@ -2247,6 +2272,7 @@ function toForm(cfg) {
     // Eine feste Zahl in Watt lässt sich im Editor nicht wählen – das Feld
     // zeigt nur Entitäten. Sie bleibt in der Konfiguration erhalten.
     grid_limit: typeof c.grid_limit === "string" ? c.grid_limit : undefined,
+    wallbox_total: alsListe(c.wallbox_total),
     pv_peak: Number.isFinite(c.pv_peak) ? c.pv_peak : undefined,
     autarky: c.autarky,
     self_consumption: c.self_consumption,
@@ -2315,6 +2341,10 @@ function fromForm(d, cfg) {
   // Eine feste Zahl in der Konfiguration überlebt den Editor unangetastet;
   // sonst gilt, was das Feld sagt.
   if (typeof cfg.grid_limit !== "number") neu.grid_limit = d.grid_limit || undefined;
+  // Mehrere Zähler werden addiert; einer bleibt ein einfacher Wert.
+  neu.wallbox_total = !d.wallbox_total || !d.wallbox_total.length
+    ? undefined
+    : d.wallbox_total.length === 1 ? d.wallbox_total[0] : d.wallbox_total;
   neu.pv_peak = Number.isFinite(d.pv_peak) && d.pv_peak > 0 ? d.pv_peak : undefined;
   neu.autarky = d.autarky || undefined;
   neu.self_consumption = d.self_consumption || undefined;
@@ -2439,7 +2469,7 @@ const SEITEN_SCHEMA = {
  * wo man die Geräte einrichtet – nicht in eine Sammelseite, auf der man sie
  * erst suchen muss.
  */
-const LISTEN_TITEL = { cars: "Zuordnung" };
+const LISTEN_TITEL = { cars: "Zuordnung", wallboxes: "Zähler und Farben" };
 
 const LISTEN_SCHEMA = {
   batteries: () => [
@@ -2450,6 +2480,7 @@ const LISTEN_SCHEMA = {
     ] },
   ],
   wallboxes: () => [
+    { name: "wallbox_total", selector: { entity: { ...SEL_ENTITY.entity, multiple: true } } },
     { type: "grid", name: "", schema: [
       { name: "color_wallboxes", selector: SEL_COLOR },
       { name: "color_cars", selector: SEL_COLOR },
@@ -2827,7 +2858,8 @@ class PowerflowPlusMobileEditor extends HTMLElement {
       case "wallboxes": {
         const n = (c.wallboxes || []).length;
         const autos = (c.wallboxes || []).filter((w) => w.car).length;
-        return n ? n + " von 4" + (autos ? ", " + autos + " mit Auto" : "") : "keine";
+        const zaehler = c.wallbox_total ? ", eigener Zähler" : "";
+        return n ? n + " von 4" + (autos ? ", " + autos + " mit Auto" : "") + zaehler : "keine";
       }
       case "cars": {
         const n = (c.cars || []).length;

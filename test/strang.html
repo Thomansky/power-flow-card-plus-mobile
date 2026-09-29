@@ -1,0 +1,139 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Prüfstand: Zähler am Ladestrang</title>
+<body style="background:#0B0E13;margin:0">
+<script src="../power-flow-card-plus-mobile.js"></script>
+<script src="pruef.js"></script>
+<script>
+// Der gemeinsame Strang der Ladespalten trägt sonst die Summe der einzelnen
+// Wallboxen. Ist ein Zähler hinterlegt, gilt dessen Wert.
+
+const lage = (extra) => ({
+  "sensor.pv": zustand("sensor.pv", 20000, "W"),
+  "sensor.haus": zustand("sensor.haus", 15000, "W"),
+  "sensor.netz": zustand("sensor.netz", 0, "W"),
+  "sensor.wb1": zustand("sensor.wb1", 6490, "W"),
+  "sensor.wb2": zustand("sensor.wb2", 3950, "W"),
+  ...(extra || {}),
+});
+const WB = [{ power: "sensor.wb1", name: "WB1" }, { power: "sensor.wb2", name: "WB2" }];
+const bau = (cfg, states) => karte({ sources: [{ power: "sensor.pv" }], house: "sensor.haus",
+  grid: "sensor.netz", wallboxes: WB, ...cfg }, states || lage(), 400, 760);
+
+// Der Strang ist die Bahn, die am Verteilknoten beginnt und an der Weiche
+// endet – erkennbar daran, dass zwei weitere Bahnen dort ansetzen.
+const strangDicke = (svg) => {
+  const alle = [...svg.querySelectorAll("path[stroke-opacity]")];
+  const start = (p) => { const m = p.getAttribute("d").match(/^M ([\d.]+) ([\d.]+)/); return [+m[1], +m[2]]; };
+  const ende = (p) => { const L = p.getTotalLength(); const q = p.getPointAtLength(L); return [q.x, q.y]; };
+  for (const p of alle) {
+    const e = ende(p);
+    const ansatz = alle.filter((q) => q !== p && Math.hypot(start(q)[0] - e[0], start(q)[1] - e[1]) < 2);
+    if (ansatz.length === 2) return +p.getAttribute("stroke-width");
+  }
+  return null;
+};
+
+(async () => {
+  // --- Ohne Zähler: die Summe ----------------------------------------------
+  {
+    const { k, svg, box } = bau({});
+    const v = k._readValues();
+    ok("ohne Zähler: Summe der beiden", v.wallboxTotal, 6490 + 3950);
+    ok("ohne Zähler: nicht gemessen", v.wallboxTotalGemessen, false);
+    ok("es gibt einen Strang", strangDicke(svg) != null, true);
+    box.remove();
+  }
+
+  // --- Mit Zähler: der gemessene Wert ---------------------------------------
+  {
+    const { k, box } = bau({ wallbox_total: "sensor.kreis" },
+      lage({ "sensor.kreis": zustand("sensor.kreis", 10800, "W") }));
+    const v = k._readValues();
+    ok("mit Zähler: gemessener Wert", v.wallboxTotal, 10800);
+    ok("mit Zähler: gemessen", v.wallboxTotalGemessen, true);
+    ok("die Summe bleibt daneben erhalten", v.wallboxSumme, 6490 + 3950);
+    box.remove();
+  }
+
+  // Der Strang wird dicker, wenn der Zähler mehr meldet als die Summe.
+  {
+    const a = bau({});
+    const b = bau({ wallbox_total: "sensor.kreis" },
+      lage({ "sensor.kreis": zustand("sensor.kreis", 20000, "W") }));
+    ok("höherer Zähler: der Strang wird dicker", strangDicke(b.svg) > strangDicke(a.svg), true);
+    a.box.remove(); b.box.remove();
+  }
+  // Und dünner, wenn er weniger meldet.
+  {
+    const a = bau({});
+    const b = bau({ wallbox_total: "sensor.kreis" },
+      lage({ "sensor.kreis": zustand("sensor.kreis", 2000, "W") }));
+    ok("niedrigerer Zähler: der Strang wird dünner", strangDicke(b.svg) < strangDicke(a.svg), true);
+    a.box.remove(); b.box.remove();
+  }
+
+  // --- kW wird umgerechnet, mehrere Zähler werden addiert -------------------
+  {
+    const { k, box } = bau({ wallbox_total: "sensor.kreis" },
+      lage({ "sensor.kreis": zustand("sensor.kreis", 10.8, "kW") }));
+    ok("kW: umgerechnet", k._readValues().wallboxTotal, 10800);
+    box.remove();
+  }
+  {
+    const { k, box } = bau({ wallbox_total: ["sensor.k1", "sensor.k2"] },
+      lage({ "sensor.k1": zustand("sensor.k1", 6000, "W"), "sensor.k2": zustand("sensor.k2", 4000, "W") }));
+    ok("mehrere Zähler werden addiert", k._readValues().wallboxTotal, 10000);
+    box.remove();
+  }
+
+  // --- Unlesbar: zurück zur Summe -------------------------------------------
+  {
+    const { k, box } = bau({ wallbox_total: "sensor.kreis" },
+      lage({ "sensor.kreis": zustand("sensor.kreis", null, "W") }));
+    const v = k._readValues();
+    ok("unlesbar: zurück zur Summe", v.wallboxTotal, 6490 + 3950);
+    ok("unlesbar: nicht als gemessen ausgegeben", v.wallboxTotalGemessen, false);
+    box.remove();
+  }
+
+  // --- Ein negativer Zähler ergibt keinen negativen Strang -------------------
+  {
+    const { k, box } = bau({ wallbox_total: "sensor.kreis" },
+      lage({ "sensor.kreis": zustand("sensor.kreis", -500, "W") }));
+    ok("negativ wird auf null gekappt", k._readValues().wallboxTotal, 0);
+    box.remove();
+  }
+
+  // --- Eine Wallbox allein: kein Strang, der Zähler stört nicht -------------
+  {
+    const { svg, box } = karte({ sources: [{ power: "sensor.pv" }], house: "sensor.haus",
+      grid: "sensor.netz", wallboxes: [WB[0]], wallbox_total: "sensor.kreis" },
+      lage({ "sensor.kreis": zustand("sensor.kreis", 10800, "W") }), 400, 760);
+    ok("eine Ladespalte: kein Strang mit zwei Ansätzen", strangDicke(svg), null);
+    box.remove();
+  }
+
+  // --- Editor ---------------------------------------------------------------
+  {
+    const felderWb = JSON.stringify(LISTEN_SCHEMA.wallboxes({}));
+    ok("Editor: Zählerfeld auf der Wallbox-Seite", felderWb.includes("wallbox_total"), true);
+    ok("Editor: Abschnitt heißt passend", LISTEN_TITEL.wallboxes, "Zähler und Farben");
+    ok("Editor: ein Zähler wird zur Zeichenkette",
+      fromForm({ ...toForm({ type: "x" }), wallbox_total: ["sensor.kreis"] }, { type: "x" }).wallbox_total,
+      "sensor.kreis");
+    ok("Editor: zwei Zähler bleiben eine Liste",
+      JSON.stringify(fromForm({ ...toForm({ type: "x" }), wallbox_total: ["sensor.a", "sensor.b"] }, { type: "x" }).wallbox_total),
+      JSON.stringify(["sensor.a", "sensor.b"]));
+    ok("Editor: leer räumt ab",
+      fromForm({ ...toForm({ type: "x" }), wallbox_total: [] }, { type: "x" }).wallbox_total, undefined);
+    ok("Editor: Hin- und Rückwandlung verlustfrei",
+      JSON.stringify(toForm({ type: "x", wallbox_total: ["sensor.a", "sensor.b"] }).wallbox_total),
+      JSON.stringify(["sensor.a", "sensor.b"]));
+    ok("Hilfetext steht in HELFER",
+      typeof HELFER.wallbox_total === "string" && HELFER.wallbox_total.length > 40, true);
+  }
+
+  fertig();
+})();
+</script>

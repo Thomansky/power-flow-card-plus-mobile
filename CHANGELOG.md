@@ -5,6 +5,23 @@ die Versionsnummern [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unveröffentlicht]
 
+## [1.10.0] – 2026-09-29
+
+### Neu
+
+* **Ein eigener Zähler für den gemeinsamen Strang der Ladespalten**
+  (`wallbox_total`, im Editor unter *Wallboxen*). Laden zwei Wallboxen
+  gleichzeitig, ergab sich die Dicke des Strangs bisher aus der Summe der
+  einzelnen. Wer den Kreis selbst misst, hinterlegt jetzt diesen Zähler – und
+  der ist oft der ehrlichere: er sitzt am Abzweig und sieht auch, was die
+  einzelnen Wallboxen nicht melden, Verluste etwa oder einen dritten
+  Verbraucher am selben Kreis.
+
+  Er darf deshalb von der Summe der beiden Äste abweichen; das ist eine
+  Aussage über die Anlage, nicht über die Karte. Mehrere Zähler werden
+  addiert. Ist der Zähler nicht lesbar, rechnet die Karte wieder mit der
+  Summe. Ohne die Einstellung ändert sich nichts.
+
 ## [1.9.0] – 2026-09-20
 
 ### Neu
@@ -452,7 +469,8 @@ Erste Veröffentlichung.
   hohe, schmale Flächen ausgelegt.
 * Reine Anzeige, es lässt sich nichts steuern.
 
-[Unveröffentlicht]: https://github.com/thomansky/power-flow-card-plus-mobile/compare/v1.9.0...HEAD
+[Unveröffentlicht]: https://github.com/thomansky/power-flow-card-plus-mobile/compare/v1.10.0...HEAD
+[1.10.0]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.10.0
 [1.9.0]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.9.0
 [1.8.0]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.8.0
 [1.7.3]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.7.3

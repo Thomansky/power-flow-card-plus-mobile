@@ -186,6 +186,7 @@ colors:
 | `batteries` | `[]` | Höchstens zwei. Je `power` **oder** `charge`+`discharge`, dazu `soc`, `name`, `icon`, `included_in_house`. |
 | `wallboxes` | `[]` | Höchstens vier. Je `power` (auch Liste), `name`, `icon`, `included_in_house`, `plug`, `car`, `car_name`, `car_icon`. |
 | `cars` | `[]` | Höchstens vier. Je `soc`, `name`, `icon`, `wallbox`, `plug`, `power`. |
+| `wallbox_total` | – | Zähler für den gemeinsamen Strang der Ladespalten, statt der Summe. Auch als Liste. |
 | `car_match` | `off` | Auto selbst zuordnen: `off`, `plug` oder `power`. Siehe unten. |
 | `car_match_window` | `300` | Nur bei `plug`: wie weit die Steckerzeitpunkte auseinanderliegen dürfen (s) |
 | `car_match_tolerance` | `0.25` | Nur bei `power`: wie stark die Leistungen abweichen dürfen (Anteil) |
@@ -247,6 +248,32 @@ external: sensor.zusatz
 Sie wird auf die ersten beiden Quellen abgebildet, samt `icons.pv`,
 `icons.external`, `colors.pv` und `colors.external`. An bestehenden Karten
 ist nichts zu ändern.
+
+---
+
+## Der Zähler am Ladestrang
+
+Laden zwei Wallboxen gleichzeitig, hängen sie an einem gemeinsamen Strang, der
+sich erst kurz über ihnen gabelt. Dessen Dicke ergibt sich sonst aus der
+**Summe** der einzelnen Wallboxen. Wer den Kreis, an dem beide hängen, selbst
+misst, kann diesen Zähler hinterlegen:
+
+```yaml
+wallbox_total: sensor.ladekreis_leistung
+```
+
+Dann gilt sein Wert. Das ist oft der ehrlichere: der Zähler sitzt am Abzweig
+und sieht auch, was die einzelnen Wallboxen nicht melden – Verluste, oder
+einen dritten Verbraucher am selben Kreis.
+
+**Er darf deshalb von der Summe der beiden Äste abweichen.** Das ist eine
+Aussage über die Anlage, nicht über die Karte – genau wie die Lücke zwischen
+Verteilknoten und Abflüssen.
+
+Mehrere Zähler werden addiert (`wallbox_total: [sensor.a, sensor.b]`). Ist der
+Zähler gerade nicht lesbar, rechnet die Karte wieder mit der Summe. Wirkt nur,
+solange zwei Wallboxen gleichzeitig laden – bei einer gibt es keinen
+gemeinsamen Strang.
 
 ---
 
@@ -648,7 +675,7 @@ powershell -File test\serve.ps1
 ```
 
 * **Automatisch**, rund 200 Prüfungen: `linien`, `quellen`, `autos`, `kacheln`,
-  `editor`, `limit` – jede Seite meldet „ALLE n GRUEN" oder ihre Fehlschläge.
+  `editor`, `limit`, `strang` – jede Seite meldet „ALLE n GRUEN" oder ihre Fehlschläge.
 * **Zum Anschauen**: `lokaler-test.html` zeigt die Karte in mehreren Szenarien
   und Bildschirmgrößen, `editor-test.html` den Editor.
 

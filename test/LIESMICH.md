@@ -21,6 +21,7 @@ Dann im Browser:
 | `test/kacheln.html` | Autarkie, Eigenverbrauch, Bilanz, helle Darstellung, Fließpunkte, Hilfetexte |
 | `test/editor.html` | der visuelle Editor mit einem `ha-form`-Ersatz |
 | `test/limit.html` | Einspeiselimit: Watt, Prozent, Spitzenleistung, am Limit |
+| `test/strang.html` | Zähler am gemeinsamen Ladestrang statt der Summe |
 
 `lokaler-test.html` und `editor-test.html` sind Sichtprüfstände zum Anschauen,
 keine automatischen.
