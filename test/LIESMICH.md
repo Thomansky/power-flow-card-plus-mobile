@@ -22,6 +22,7 @@ Dann im Browser:
 | `test/editor.html` | der visuelle Editor mit einem `ha-form`-Ersatz |
 | `test/limit.html` | Einspeiselimit: Watt, Prozent, Spitzenleistung, am Limit |
 | `test/strang.html` | Zähler am gemeinsamen Ladestrang statt der Summe |
+| `test/balkon.html` | Quellen nur anzeigen: Summe, Bilanz, gestrichelte Linie, Editor |
 
 `lokaler-test.html` und `editor-test.html` sind Sichtprüfstände zum Anschauen,
 keine automatischen.

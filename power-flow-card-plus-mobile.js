@@ -8,7 +8,7 @@
  * https://github.com/thomansky/power-flow-card-plus-mobile
  */
 
-const PPM_VERSION = "1.10.0";
+const PPM_VERSION = "1.11.0";
 
 console.info(
   `%c POWER-FLOW-CARD-PLUS-MOBILE %c v${PPM_VERSION} `,
@@ -555,6 +555,10 @@ class PowerflowPlusMobileCard extends HTMLElement {
           // Manche Wechselrichter melden die Erzeugung negativ. Dann hier
           // umdrehen, statt am Sensor zu basteln.
           invert: !!o.invert,
+          // Ein Erzeuger, der an der Anlage vorbei angeschlossen ist – ein
+          // Balkonkraftwerk an der Steckdose etwa. Seine Kugel zeigt den Wert,
+          // aber er zählt nicht in die Erzeugungssumme und nicht in die Bilanz.
+          display_only: !!o.display_only,
           // Merkt sich, ob der Eintrag aus pv/external stammt – nur dann
           // gelten die alten icons.pv/colors.pv weiter.
           alt: o._alt,
@@ -1021,6 +1025,8 @@ class PowerflowPlusMobileCard extends HTMLElement {
         power: roh == null ? null : q.invert ? -roh : roh,
         name: q.name,
         icon: q.icon,
+        // Zählt die Quelle in die Summe, oder steht sie nur zur Anzeige da?
+        gezaehlt: !q.display_only,
       };
     });
     const grid = this._bipolar(c.grid, c.invert_grid);
@@ -1054,7 +1060,13 @@ class PowerflowPlusMobileCard extends HTMLElement {
     });
     const cars = c.cars.map((x) => ({ soc: this._pctVal(x.soc), name: x.name }));
 
-    const production = sources.reduce((a, q) => a + Math.max(0, z(q.power)), 0);
+    // Nur, was über die Anlage läuft. Ein Balkonkraftwerk an der Steckdose
+    // sieht deren Zähler nicht als Erzeugung – nur als weniger Bezug. Zählte
+    // die Karte es trotzdem mit, flösse am Verteilknoten mehr hinein als
+    // heraus. Wer es so eingetragen hat, bekommt es aus allen Summen heraus;
+    // die eigene Kugel zeigt es weiter.
+    const production = sources.reduce((a, q) => a + (q.gezaehlt ? Math.max(0, z(q.power)) : 0), 0);
+    const nurAngezeigt = sources.reduce((a, q) => a + (q.gezaehlt ? 0 : Math.max(0, z(q.power))), 0);
     const batteryPower = batteries.reduce((a, b) => a + z(b.power), 0);
     const socList = batteries.map((b) => b.soc).filter((v) => v != null);
     const batterySoc = socList.length ? socList.reduce((a, b) => a + b, 0) / socList.length : null;
@@ -1163,7 +1175,7 @@ class PowerflowPlusMobileCard extends HTMLElement {
     // dieser Form gar nicht gibt. Die Anteile sind deshalb eine Aufteilung
     // nach Einspeisung, keine Messung.
     const zufuhr = [
-      ...sources.map((q, i) => ({ key: "src" + i, value: Math.max(0, z(q.power)) })),
+      ...sources.map((q, i) => ({ key: "src" + i, value: q.gezaehlt ? Math.max(0, z(q.power)) : 0 })),
       { key: "battery", value: speicherZufuhr },
       { key: "grid", value: gridImport },
     ].filter((x) => x.value > 0);
@@ -1180,7 +1192,7 @@ class PowerflowPlusMobileCard extends HTMLElement {
       houseRaw: house,
       abzug,
       batteries, wallboxes, cars,
-      production,
+      production, nurAngezeigt,
       batteryPower,
       batteryCharge: Math.max(0, batteryPower),
       batteryDischarge: Math.max(0, -batteryPower),
@@ -1538,6 +1550,8 @@ class PowerflowPlusMobileCard extends HTMLElement {
     v.sources.forEach((q, i) => {
       // Zieht die Quelle, läuft der Fluss zu ihr hin statt von ihr weg.
       put("src" + (i + 1), Math.abs(z(q.power)), quellFarbe(i), z(q.power) < 0);
+      // Nur zur Anzeige: in die Summe fließt nichts, also auch kein Fluss.
+      if (!q.gezaehlt) states["src" + (i + 1)] = { power: 0, color: quellFarbe(i), abseits: true };
     });
     put("bus", v.production, PAL.bus);
     put("house", Math.max(0, z(v.house)), PAL.house);
@@ -1583,7 +1597,7 @@ class PowerflowPlusMobileCard extends HTMLElement {
     // Aufteilung über die Quellen, ohne Speicher und Netz.
     const quellMischung = (() => {
       const teile = v.sources
-        .map((q, i) => ({ value: Math.max(0, z(q.power)), color: quellFarbe(i) }))
+        .map((q, i) => ({ value: q.gezaehlt ? Math.max(0, z(q.power)) : 0, color: quellFarbe(i) }))
         .filter((x) => x.value > 0);
       return teile.length > 1 ? teile : null;
     })();
@@ -1637,6 +1651,19 @@ class PowerflowPlusMobileCard extends HTMLElement {
       const bahn = el("path", { d: dPath, fill: "none", "stroke-linecap": "round" });
       svg.appendChild(bahn);
       const laenge = bahn.getTotalLength();
+
+      // Eine Quelle, die nur zur Anzeige dasteht, bleibt mit der Summe
+      // verbunden – aber gestrichelt und ohne Fluss. Ganz ohne Linie sähe
+      // die Kugel aus, als fehlte etwas; durchgezogen, als flösse gleich
+      // etwas. Gestrichelt heißt: gehört dazu, zählt aber nicht mit.
+      if (st.abseits) {
+        bahn.setAttribute("stroke", st.color);
+        bahn.setAttribute("stroke-opacity", 0.6);
+        bahn.setAttribute("stroke-width", 1.6);
+        bahn.setAttribute("stroke-dasharray", "2 5");
+        bahn.setAttribute("class", "abseits");
+        return;
+      }
 
       const active = st.power > 0;
       // Die Dicke sagt, wie viel fließt. Auf einem kurzen Weg darf sie das
@@ -2100,6 +2127,7 @@ const LABELS = {
   car_icon: "Auto – Symbol",
   color: "Farbe",
   invert: "Vorzeichen umdrehen",
+  display_only: "Nur anzeigen, nicht in die Summe rechnen",
   power_sources: "Leistung",
   icon_grid: "Symbol Netz",
   icon_house: "Symbol Zuhause",
@@ -2139,6 +2167,11 @@ const HELFER = {
     "Anschalten, wenn der Sensor die Erzeugung negativ meldet. Zieht die " +
     "Quelle im Bereitschaftsbetrieb, bleibt der Wert danach negativ – die " +
     "Karte zeigt ihn dann und dreht die Flussrichtung um.",
+  display_only:
+    "Für Erzeuger, die an der Anlage vorbei angeschlossen sind – ein " +
+    "Balkonkraftwerk an der Steckdose etwa. Die Kugel zeigt den Wert weiter, " +
+    "die Linie wird gestrichelt. In die Erzeugungssumme, die Bilanz, den " +
+    "Eigenverbrauch und die Herkunftsfarben fließt die Quelle nicht ein.",
   grid_limit:
     "Sensor in W, kW oder %. Ist ein Limit bekannt, wird der Ring ums Netz " +
     "zur Anzeige: er füllt sich mit der Einspeisung, voll heißt gedeckelt. " +
@@ -2518,6 +2551,7 @@ const KIND = {
       name: x.name, icon: x.icon, color: x.color,
       power_sources: alsListe(x.power),
       invert: !!x.invert,
+      display_only: !!x.display_only,
     }),
     fromForm: (d) =>
       clean({
@@ -2530,6 +2564,7 @@ const KIND = {
           : d.power_sources.length === 1 ? d.power_sources[0] : d.power_sources,
         // false ist die Vorgabe und muss nicht in der Konfiguration stehen.
         invert: d.invert ? true : undefined,
+        display_only: d.display_only ? true : undefined,
       }),
     schema: () => [
       { type: "grid", name: "", schema: [
@@ -2539,6 +2574,7 @@ const KIND = {
       { name: "power_sources", selector: { entity: { ...SEL_ENTITY.entity, multiple: true } } },
       { name: "color", selector: SEL_COLOR },
       { name: "invert", selector: { boolean: {} } },
+      { name: "display_only", selector: { boolean: {} } },
     ],
   },
 
@@ -2846,8 +2882,10 @@ class PowerflowPlusMobileEditor extends HTMLElement {
     const kurz = (e) => (e ? String(e).replace(/^sensor\./, "") : "–");
     switch (id) {
       case "sources": {
-        const n = quellenAus(c).length;
-        return n ? n + " von 5" : "keine";
+        const liste = quellenAus(c);
+        const abseits = liste.filter((q) => q && q.display_only).length;
+        if (!liste.length) return "keine";
+        return liste.length + " von 5" + (abseits ? ", " + abseits + " nur angezeigt" : "");
       }
       case "house": return kurz(c.house);
       case "grid": return istPaar(c.grid) ? "zwei Sensoren" : kurz(c.grid);
@@ -2933,12 +2971,29 @@ class PowerflowPlusMobileEditor extends HTMLElement {
 
   // ---------------------------------------------------------------- Listen
 
+  /**
+   * Die Einträge einer Liste so, wie der Editor sie bearbeitet – für die
+   * Zeilen ebenso wie für jede Änderung daran.
+   *
+   * Bei den Quellen zählt die alte Schreibweise mit `pv` und `external` mit.
+   * Vorher wurden die Zeilen aus ihr gebaut, jede Eingabe aber startete von
+   * `sources` – das gibt es dort nicht, also von einer leeren Liste. mitQuellen
+   * räumte danach die alten Angaben ab, und die andere Quelle war weg.
+   *
+   * Ein Eintrag, der nur aus einer Entität besteht, wird zum Objekt. Die
+   * Karte versteht beides, das Formular nur das Objekt – sonst stand die
+   * Zeile leer da, und die erste Eingabe warf den Sensor hinaus.
+   */
+  _eintraege(art) {
+    const roh = art === "sources" ? quellenAus(this._config) : alsListe(this._config[art]);
+    const schluessel = art === "cars" ? "soc" : "power";
+    return roh.map((x) => (typeof x === "string" ? { [schluessel]: x } : x || {}));
+  }
+
   _zeigeListe(seite) {
     const art = seite.id;
     const k = KIND[art];
-    const items = art === "sources"
-      ? quellenAus(this._config)
-      : this._config[art] || [];
+    const items = this._eintraege(art);
 
     this._wurzel.innerHTML = "";
     this._wurzel.appendChild(this._kopf(seite));
@@ -3055,7 +3110,7 @@ class PowerflowPlusMobileEditor extends HTMLElement {
         this._render();
         return;
       }
-      const liste = [...(this._config[art] || [])];
+      const liste = [...this._eintraege(art)];
       liste[i] = k.fromForm(neu);
       // Beim Tippen wird bewusst nicht neu gezeichnet, sonst verlöre das Feld
       // den Eingabefokus. Die Kopfzeile bliebe dann aber auf dem alten Namen
@@ -3079,7 +3134,7 @@ class PowerflowPlusMobileEditor extends HTMLElement {
     weg.textContent = "Entfernen";
     weg.addEventListener("click", (ev) => {
       ev.stopPropagation(); // sonst klappt das Panel gleich mit zu
-      const liste = [...(this._config[art] || [])];
+      const liste = [...this._eintraege(art)];
       liste.splice(i, 1);
       // Die gemerkten Bauarten müssen mitrutschen, sonst gehören sie danach
       // zur falschen Zeile.

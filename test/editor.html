@@ -58,6 +58,65 @@ const auswahl = (form, name) => {
     ed.remove();
   }
 
+  // --- Alte Schreibweise: eine Eingabe in einer Zeile behält die andere -------
+  // Die Zeilen kamen aus pv/external, jede Eingabe startete aber von einer
+  // leeren sources-Liste – danach war die jeweils andere Quelle weg.
+  const ALT = { type: "custom:power-flow-card-plus-mobile", house: "sensor.haus",
+    pv: "sensor.pv", external: "sensor.balkon", icons: { external: "mdi:solar-panel" } };
+  {
+    const { ed, stand } = editor(ALT);
+    await warte(60);
+    ed._oeffne("sources"); await warte();
+    oeffne(zeilen(ed)[1]).tippe("display_only", true); await warte();
+    const q = (n) => (stand.letzte.sources || [])[n] || {};
+    ok("alt, zweite Zeile: beide Quellen bleiben", (stand.letzte.sources || []).length, 2);
+    ok("alt, zweite Zeile: die erste behält ihren Sensor", q(0).power, "sensor.pv");
+    ok("alt, zweite Zeile: der Schalter sitzt an der zweiten", q(1).display_only, true);
+    ok("alt, zweite Zeile: ihr Symbol wandert mit", q(1).icon, "mdi:solar-panel");
+    ok("alt, zweite Zeile: die alte Schreibweise ist abgeräumt", stand.letzte.pv, undefined);
+    let offen = true;
+    try { ed._oeffne("sources"); await warte(); } catch (e) { offen = e.message; }
+    ok("danach lässt sich die Liste wieder öffnen", offen === true && zeilen(ed).length, 2);
+    ed.remove();
+  }
+  {
+    const { ed, stand } = editor(ALT);
+    await warte(60);
+    ed._oeffne("sources"); await warte();
+    oeffne(zeilen(ed)[0]).tippe("name", "Dach"); await warte();
+    ok("alt, erste Zeile: die zweite Quelle bleibt", ((stand.letzte.sources || [])[1] || {}).power, "sensor.balkon");
+    ed.remove();
+  }
+  {
+    const { ed, stand } = editor(ALT);
+    await warte(60);
+    ed._oeffne("sources"); await warte();
+    zeilen(ed)[1].querySelector("button.del").click(); await warte();
+    ok("alt, Entfernen: die andere Quelle bleibt",
+      JSON.stringify((stand.letzte.sources || []).map((q) => q && q.power)), JSON.stringify(["sensor.pv"]));
+    ed.remove();
+  }
+
+  // --- Einträge, die nur aus einem Sensornamen bestehen ----------------------
+  {
+    const { ed, stand } = editor({ type: "custom:power-flow-card-plus-mobile", house: "sensor.haus",
+      sources: ["sensor.pv", "sensor.balkon"], wallboxes: ["sensor.wb"] });
+    await warte(60);
+    ed._oeffne("sources"); await warte();
+    const f = oeffne(zeilen(ed)[1]);
+    ok("nur Sensorname: das Formular kennt den Sensor",
+      JSON.stringify(f.data.power_sources), JSON.stringify(["sensor.balkon"]));
+    f.tippe("display_only", true); await warte();
+    const q = (n) => (stand.letzte.sources || [])[n] || {};
+    ok("nur Sensorname: der Sensor überlebt die Eingabe", q(1).power, "sensor.balkon");
+    ok("nur Sensorname: der Schalter ist gesetzt", q(1).display_only, true);
+    ok("nur Sensorname: die andere Zeile bleibt, wie sie war", q(0).power || q(0), "sensor.pv");
+    ed._oeffne("wallboxes"); await warte();
+    oeffne(zeilen(ed)[0]).tippe("name", "Garage"); await warte();
+    ok("nur Sensorname, Wallbox: der Sensor überlebt", ((stand.letzte.wallboxes || [])[0] || {}).power, "sensor.wb");
+    ed.remove();
+  }
+
   // --- Autos: Seite, Felder, Zuordnung ---------------------------------------
   {
     const { ed, stand } = editor({ type: "custom:power-flow-card-plus-mobile", house: "sensor.haus" });

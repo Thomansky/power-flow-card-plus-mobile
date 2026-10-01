@@ -1,0 +1,232 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Prüfstand: Quellen nur anzeigen</title>
+<body style="background:#0B0E13;margin:0;--divider-color:#444;--primary-text-color:#ddd">
+<script src="../power-flow-card-plus-mobile.js"></script>
+<script src="pruef.js"></script>
+<script>
+// Erzeuger an der Anlage vorbei – Balkonkraftwerke an der Steckdose. Ihre
+// Kugel zeigt den Wert, aber sie zählen nicht in Summe, Bilanz und Herkunft.
+
+// Die Anlage misst Sonne, Zweitquelle und Wind: 9 kW. Die beiden Balkon-
+// kraftwerke sieht sie nicht als Erzeugung, nur als weniger Bezug – ihr
+// Hausverbrauch ist deshalb schon um deren 1 kW kleiner. 9 kW = 7 kW Haus
+// + 2 kW Einspeisung: so geht ihre Bilanz auf.
+const W = { pv: 6000, ext: 2000, wind: 1000, b1: 600, b2: 400, haus: 7000, netz: -2000 };
+const S = (extra) => {
+  const s = {};
+  Object.keys(W).forEach((k) => { s["sensor." + k] = zustand("sensor." + k, W[k], "W"); });
+  return { ...s, ...(extra || {}) };
+};
+// Eigene Farben für die beiden Balkonkraftwerke, damit sie sich eindeutig
+// wiederfinden lassen – die Vorgabe der vierten Quelle teilt sich ihr Cyan
+// mit der Einspeisung.
+const ROSA = "#FF00AA", MINT = "#00FFAA";
+const quellen = (abseits) => [
+  { power: "sensor.pv", name: "Sonne" },
+  { power: "sensor.ext", name: "Zweite" },
+  { power: "sensor.wind", name: "Wind" },
+  { power: "sensor.b1", name: "Balkon 1", color: ROSA, ...(abseits ? { display_only: true } : {}) },
+  { power: "sensor.b2", name: "Balkon 2", color: MINT, ...(abseits ? { display_only: true } : {}) },
+];
+const bau = (abseits, extra, states) => karte({ sources: quellen(abseits), house: "sensor.haus",
+  grid: "sensor.netz", ...(extra || {}) }, states || S(), 400, 720);
+
+const bahnen = (svg) => [...svg.querySelectorAll("path.flow-dash")];
+const gestrichelt = (svg) => [...svg.querySelectorAll("path.abseits")];
+const texte = (svg) => [...svg.querySelectorAll("text")].map((t) => t.textContent);
+const sammelText = (svg) => {
+  // Der obere Sammelknoten: der Kreis mit Radius, der nur eine Zahl trägt
+  // und unter der Quellreihe als erster kommt.
+  const g = [...svg.querySelectorAll("g")].filter((x) => x.querySelectorAll("text").length === 1);
+  return g.length ? g[0].textContent : null;
+};
+
+(async () => {
+  // --- Ohne Schalter: alles zählt -----------------------------------------
+  {
+    const { k, svg, box } = bau(false);
+    const v = k._readValues();
+    ok("ohne Schalter: alle fünf in der Summe", v.production, 10000);
+    ok("ohne Schalter: nichts nur angezeigt", v.nurAngezeigt, 0);
+    ok("ohne Schalter: keine gestrichelte Linie", gestrichelt(svg).length, 0);
+    ok("ohne Schalter: die Bilanz geht nicht auf", v.durchsatz === (v.house + v.gridExport), false);
+    box.remove();
+  }
+
+  // --- Mit Schalter: die beiden zählen nicht --------------------------------
+  {
+    const { k, svg, box } = bau(true);
+    const v = k._readValues();
+    ok("Summe ohne die beiden", v.production, 9000);
+    ok("nur angezeigt: ihre Leistung", v.nurAngezeigt, 1000);
+    ok("Durchsatz ohne die beiden", v.durchsatz, 9000);
+    ok("die Bilanz geht auf", v.durchsatz, v.house + v.gridExport);
+    ok("der eigene Wert bleibt", v.sources[3].power, 600);
+    ok("als nicht gezählt markiert", v.sources[3].gezaehlt, false);
+    ok("die anderen zählen", v.sources.slice(0, 3).every((q) => q.gezaehlt), true);
+    nah("Eigenverbrauch ohne die beiden", v.selfConsumption, 7000 / 9000);
+    ok("Herkunft ohne die beiden",
+      v.houseMix.map((m) => m.key).join(","), "src0,src1,src2");
+    ok("Kopfzeile zeigt die gezählte Summe",
+      k.shadowRoot.querySelector("#total").textContent, fmtPower(9000));
+    ok("Sammelkugel zeigt die gezählte Summe", sammelText(svg), fmtPower(9000));
+    ok("Balkon 1 zeigt seinen Wert", texte(svg).includes(fmtPower(600)), true);
+    ok("Balkon 2 zeigt seinen Wert", texte(svg).includes(fmtPower(400)), true);
+
+    const g = gestrichelt(svg);
+    ok("zwei gestrichelte Linien", g.length, 2);
+    ok("gestrichelt in der Farbe der Quelle",
+      g.map((p) => p.getAttribute("stroke")).sort().join(","), [MINT, ROSA].sort().join(","));
+    ok("gestrichelt heißt: mit Strichmuster", g.every((p) => !!p.getAttribute("stroke-dasharray")), true);
+    const wege = new Set(g.map((p) => p.getAttribute("d")));
+    ok("auf den gestrichelten fließt nichts", bahnen(svg).some((p) => wege.has(p.getAttribute("d"))), false);
+    ok("ihre Farben fließen nirgends",
+      bahnen(svg).some((p) => [ROSA, MINT].includes(p.getAttribute("stroke"))), false);
+    ok("die anderen drei fließen", ["#FFC300", "#FF5A2D", "#8AD94F"].every((f) =>
+      bahnen(svg).some((p) => (p.getAttribute("stroke") || "").toUpperCase() === f)), true);
+    box.remove();
+  }
+
+  // --- Die Anordnung bleibt dieselbe ---------------------------------------
+  {
+    const lage = (svg) => [...svg.querySelectorAll("circle")]
+      .filter((c) => +c.getAttribute("r") > 10 && c.getAttribute("fill") !== "transparent"
+        && c.getAttribute("fill") !== "none")
+      .map((c) => Math.round(+c.getAttribute("cx")) + "/" + Math.round(+c.getAttribute("cy"))).join(" ");
+    const a = bau(false), b = bau(true);
+    ok("dieselben Kugeln an denselben Stellen", lage(b.svg), lage(a.svg));
+    a.box.remove(); b.box.remove();
+  }
+
+  // --- Fließpunkte nach Herkunft: die beiden mischen nicht mit ---------------
+  {
+    const { svg, box } = bau(true, { flow_mix: true });
+    ok("Herkunftspunkte ohne ihre Farben",
+      bahnen(svg).some((p) => [ROSA, MINT].includes(p.getAttribute("stroke"))), false);
+    ok("gemischt wird trotzdem", new Set(bahnen(svg).map((p) => p.getAttribute("d"))).size < bahnen(svg).length, true);
+    box.remove();
+  }
+  // Mit 600 und 400 W gegen 9 kW bekämen die beiden auf dem kurzen Weg
+  // zwischen den Sammelknoten ohnehin keinen Punkt ab – die Prüfung oben
+  // könnte also gar nicht scheitern. Hier ist das Balkonkraftwerk der
+  // stärkste Erzeuger: zählte es mit, gehörte ihm der erste Punkt.
+  {
+    const s = S({ "sensor.pv": zustand("sensor.pv", 1000, "W"), "sensor.wind": zustand("sensor.wind", 1000, "W"),
+      "sensor.b1": zustand("sensor.b1", 6000, "W"), "sensor.haus": zustand("sensor.haus", 2000, "W"),
+      "sensor.netz": zustand("sensor.netz", 0, "W") });
+    const { svg, box } = karte({ house: "sensor.haus", grid: "sensor.netz", flow_mix: true, sources: [
+      { power: "sensor.pv" }, { power: "sensor.wind" },
+      { power: "sensor.b1", color: ROSA, display_only: true }] }, s, 400, 720);
+    const mehrfach = (() => {
+      const m = new Map();
+      bahnen(svg).forEach((p) => m.set(p.getAttribute("d"), (m.get(p.getAttribute("d")) || []).concat(p)));
+      return [...m.values()].filter((l) => l.length > 1);
+    })();
+    ok("stärkster Erzeuger, nur angezeigt: kein Punkt in seiner Farbe",
+      bahnen(svg).some((p) => p.getAttribute("stroke") === ROSA), false);
+    ok("zwischen den Sammelknoten mischen die beiden gezählten", mehrfach.length > 0, true);
+    box.remove();
+  }
+  {
+    const { k, svg, box } = bau(true, { house_mix: true });
+    const v = k._readValues();
+    ok("Ring ums Haus ohne ihre Farben",
+      [...svg.querySelectorAll("path, circle")].some((e) =>
+        e.closest("g") && (e.closest("g").textContent || "").includes("Zuhause") &&
+        [ROSA, MINT].includes(e.getAttribute("stroke"))), false);
+    ok("Ring ums Haus: drei Anteile", v.houseMix.length, 3);
+    box.remove();
+  }
+
+  // --- Alle nur angezeigt ---------------------------------------------------
+  {
+    let heil = true, r;
+    try {
+      r = karte({ house: "sensor.haus", grid: "sensor.netz",
+        sources: [{ power: "sensor.b1", display_only: true }, { power: "sensor.b2", display_only: true }] }, S());
+    } catch (e) { heil = e.message; }
+    ok("alle nur angezeigt: kein Fehler", heil, true);
+    if (r) {
+      const v = r.k._readValues();
+      ok("alle nur angezeigt: Summe null", v.production, 0);
+      ok("alle nur angezeigt: Eigenverbrauch ohne Rechnung", v.selfConsumption, null);
+      ok("alle nur angezeigt: beide gestrichelt", gestrichelt(r.svg).length, 2);
+      r.box.remove();
+    }
+  }
+
+  // --- Negativ und nur angezeigt: kein Rückwärtsfluss ----------------------
+  {
+    const { k, svg, box } = bau(true, null, S({ "sensor.b1": zustand("sensor.b1", -60, "W") }));
+    const v = k._readValues();
+    ok("Bereitschaft, nur angezeigt: Wert bleibt", v.sources[3].power, -60);
+    ok("Bereitschaft, nur angezeigt: Summe unberührt", v.production, 9000);
+    ok("Bereitschaft, nur angezeigt: der Wert steht da", texte(svg).includes("-60 W"), true);
+    ok("Bereitschaft, nur angezeigt: kein Fluss", bahnen(svg).some((p) => p.getAttribute("stroke") === ROSA), false);
+    box.remove();
+  }
+
+  // --- Antippen geht weiter -------------------------------------------------
+  {
+    const { k, svg, box } = bau(true);
+    const kugel = [...svg.querySelectorAll("g.node-hit")].find((g) => (g.textContent || "").includes("Balkon 1"));
+    ok("nur angezeigt: trotzdem antippbar", !!kugel, true);
+    let gemeldet = null;
+    k.addEventListener("hass-action", (ev) => { gemeldet = ev.detail.config.entity; });
+    if (kugel) kugel.querySelector("circle[fill='transparent']").dispatchEvent(new Event("click", { bubbles: true }));
+    ok("gemeldet wird ihr Sensor", gemeldet, "sensor.b1");
+    box.remove();
+  }
+
+  // --- Alte Schreibweise: zählt wie immer -----------------------------------
+  {
+    const { k, box } = karte({ pv: "sensor.pv", external: "sensor.ext", house: "sensor.haus" }, S());
+    const v = k._readValues();
+    ok("alt: beide zählen", v.sources.every((q) => q.gezaehlt), true);
+    ok("alt: Summe wie immer", v.production, 8000);
+    box.remove();
+  }
+
+  // --- Editor ---------------------------------------------------------------
+  {
+    ok("Editor kennt den Schalter", JSON.stringify(KIND.sources.schema({})).includes("display_only"), true);
+    ok("aus steht nicht in der Konfiguration",
+      KIND.sources.fromForm({ power_sources: ["sensor.b1"], display_only: false }).display_only, undefined);
+    ok("an landet in der Konfiguration",
+      KIND.sources.fromForm({ power_sources: ["sensor.b1"], display_only: true }).display_only, true);
+    ok("Hin- und Rückweg", KIND.sources.toForm({ power: "sensor.b1", display_only: true }).display_only, true);
+    ok("ohne Angabe: aus", KIND.sources.toForm({ power: "sensor.b1" }).display_only, false);
+    ok("Hilfetext steht in HELFER",
+      typeof HELFER.display_only === "string" && HELFER.display_only.length > 40, true);
+    ok("Beschriftung ist da und kurz",
+      typeof LABELS.display_only === "string" && LABELS.display_only.length <= 60, true);
+  }
+  {
+    const zeilen = (ed) => [...ed.querySelectorAll("details.zeile")];
+    const oeffne = (z) => { z.open = true; z.dispatchEvent(new Event("toggle")); return z.querySelector("ha-form"); };
+    const { ed, stand } = editor({ type: "custom:power-flow-card-plus-mobile", house: "sensor.haus",
+      sources: [{ power: "sensor.pv" }, { power: "sensor.b1", name: "Balkon" }] });
+    await warte(60);
+    ed._oeffne("sources"); await warte();
+    const f = oeffne(zeilen(ed)[1]);
+    ok("Editor: Schalter im Quelleneintrag", felder(f).includes("display_only"), true);
+    f.tippe("display_only", true); await warte();
+    ok("Editor: an kommt an", stand.letzte.sources[1].display_only, true);
+    ok("Editor: die erste Quelle bleibt unberührt", stand.letzte.sources[0].display_only, undefined);
+    f.tippe("name", "Balkon Süd"); await warte();
+    ok("Editor: nach der nächsten Eingabe noch an", stand.letzte.sources[1].display_only, true);
+    ok("Editor: und der Name ist da", stand.letzte.sources[1].name, "Balkon Süd");
+    ok("Hauptmenü sagt es", ed._zusammenfassung("sources"), "2 von 5, 1 nur angezeigt");
+    f.tippe("display_only", false); await warte();
+    ok("Editor: aus räumt ab", stand.letzte.sources[1].display_only, undefined);
+    ok("Hauptmenü wieder schlicht", ed._zusammenfassung("sources"), "2 von 5");
+    let heil = true;
+    try { document.createElement("power-flow-card-plus-mobile").setConfig(stand.letzte); } catch (e) { heil = e.message; }
+    ok("die Karte nimmt die Konfiguration an", heil, true);
+    ed.remove();
+  }
+
+  fertig();
+})();
+</script>

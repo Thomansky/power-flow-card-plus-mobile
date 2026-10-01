@@ -175,7 +175,7 @@ colors:
 
 | Feld | Vorgabe | Bedeutung |
 |---|---|---|
-| `sources` | `[]` | Bis zu fünf Erzeugungsquellen. Je `power` (auch Liste), `name`, `icon`, `color`, `invert`. |
+| `sources` | `[]` | Bis zu fünf Erzeugungsquellen. Je `power` (auch Liste), `name`, `icon`, `color`, `invert`, `display_only` (nur anzeigen, nicht in die Summe – siehe unten). |
 | `pv`, `external` | – | Ältere Schreibweise, wird auf die ersten beiden Quellen abgebildet. |
 | `grid` | – | Netzleistung, positiv = Bezug. Auch als Paar `consumption`/`production`. |
 | `house` | – | Hausverbrauch gesamt |
@@ -248,6 +248,37 @@ external: sensor.zusatz
 Sie wird auf die ersten beiden Quellen abgebildet, samt `icons.pv`,
 `icons.external`, `colors.pv` und `colors.external`. An bestehenden Karten
 ist nichts zu ändern.
+
+### Erzeuger an der Anlage vorbei
+
+Ein Balkonkraftwerk an der Steckdose sieht die Anlage nicht als Erzeugung –
+nur als weniger Bezug. Ihr Hausverbrauch ist deshalb schon um dessen Leistung
+kleiner. Zählte die Karte es trotzdem in die Erzeugung, flösse am
+Verteilknoten mehr hinein als heraus, und die Sammelkugel zeigte mehr, als die
+Anlage selbst angibt.
+
+Für solche Quellen gibt es `display_only: true`, im Editor „Nur anzeigen,
+nicht in die Summe rechnen":
+
+```yaml
+sources:
+  - name: Sonne
+    power: sensor.e3dc_pv
+  - name: Balkon Süd
+    icon: mdi:solar-panel
+    power: sensor.balkon_sued_leistung
+    display_only: true
+```
+
+Die Kugel zeigt ihren Wert weiter und lässt sich antippen; ihre Linie zur
+Sammelkugel wird gestrichelt und fließt nicht. In die Erzeugungssumme, die
+Bilanz am Verteilknoten, den gerechneten Eigenverbrauch und die
+Herkunftsfarben geht sie nicht ein. Die Zahlen der Karte stimmen dann wieder
+mit denen der Anlage überein.
+
+Misst Dein Hausverbrauchs-Sensor dagegen alle Verbraucher selbst – ein eigener
+Zähler statt des Werts, den die Anlage ausrechnet –, dann steckt das
+Balkonkraftwerk in der Bilanz mit drin. Lass den Schalter dann aus.
 
 ---
 

@@ -5,6 +5,37 @@ die Versionsnummern [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unveröffentlicht]
 
+## [1.11.0] – 2026-10-01
+
+### Neu
+
+* **Quellen nur anzeigen, ohne sie in die Summe zu rechnen** (`display_only`,
+  im Editor je Quelle „Nur anzeigen, nicht in die Summe rechnen"). Gedacht für
+  Erzeuger, die an der Anlage vorbei angeschlossen sind – Balkonkraftwerke an
+  der Steckdose etwa. Die Anlage sieht sie nur als weniger Bezug, ihr
+  Hausverbrauch ist schon um deren Leistung kleiner; zählte die Karte sie
+  trotzdem in die Erzeugung, ginge die Bilanz am Verteilknoten nicht auf.
+
+  Die Kugel zeigt ihren Wert weiter und bleibt antippbar, ihre Linie zur
+  Sammelkugel wird gestrichelt und fließt nicht. Erzeugungssumme, Kopfzeile,
+  Bilanz, gerechneter Eigenverbrauch und Herkunftsfarben lassen sie aus. Das
+  Hauptmenü des Editors sagt, wie viele Quellen nur angezeigt werden. Ohne die
+  Einstellung ändert sich nichts.
+
+### Behoben
+
+* **Editor, alte Schreibweise mit `pv` und `external`:** Eine Eingabe in einer
+  der beiden Quellzeilen warf die jeweils andere Quelle hinaus, „Entfernen"
+  sogar beide. Die Zeilen wurden aus der alten Schreibweise gebaut, jede
+  Änderung startete aber von einer leeren `sources`-Liste. Jetzt starten beide
+  vom selben Stand, und die alte Schreibweise wird dabei sauber in die Liste
+  übernommen – samt Symbol und Farbe.
+* **Editor, Einträge aus nur einem Sensornamen** (`sources: [sensor.pv]`,
+  ebenso bei Speichern, Wallboxen und Autos): Die Karte verstand sie, das
+  Formular zeigte die Zeile aber leer, und die erste Eingabe warf den Sensor
+  hinaus. Solche Einträge werden jetzt zum Objekt, bevor das Formular sie
+  sieht.
+
 ## [1.10.0] – 2026-09-29
 
 ### Neu
@@ -469,7 +500,8 @@ Erste Veröffentlichung.
   hohe, schmale Flächen ausgelegt.
 * Reine Anzeige, es lässt sich nichts steuern.
 
-[Unveröffentlicht]: https://github.com/thomansky/power-flow-card-plus-mobile/compare/v1.10.0...HEAD
+[Unveröffentlicht]: https://github.com/thomansky/power-flow-card-plus-mobile/compare/v1.11.0...HEAD
+[1.11.0]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.11.0
 [1.10.0]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.10.0
 [1.9.0]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.9.0
 [1.8.0]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.8.0
