@@ -319,6 +319,160 @@ const querDurch = (svg) => {
     ed.remove();
   }
 
+  // --- Hinter dem Haus: Verteiler → Haus → Verbraucher ----------------------
+  for (const wo of ["meter", "house"]) {
+    const { k, svg, box } = bau({ consumers_from: wo });
+    const v = k._readValues();
+    const kg = kugeln(svg);
+    const nabe = wo === "meter"
+      ? kg.find((c) => c.text === fmtPower(6000))
+      : kg.find((c) => c.text.includes("Zuhause"));
+    ok(`hinter dem Haus (${wo}): die Nabe steht da`, !!nabe, true);
+    ok(`hinter dem Haus (${wo}): sie zeigt den Hausverbrauch`, v.nabe, 6000);
+    ok(`hinter dem Haus (${wo}): alle drei Verbraucher stehen da`,
+      ["Haus", "Wärmepumpe", "Werkstatt"].every((n) => texte(svg).includes(n)), true);
+    // Jede Leitung zu einem Verbraucher beginnt an der Nabe.
+    const verbraucher = kg.filter((c) => DREI.some((d) => c.text.includes(d.name)));
+    const anNabe = bahnenAlle(svg).filter((p) => {
+      const pts = punkte(p, 2);
+      const a = pts[0], e = pts[pts.length - 1];
+      return nabe && Math.abs(Math.hypot(a[0] - nabe.x, a[1] - nabe.y) - nabe.r) < 1.5 &&
+        verbraucher.some((c) => Math.abs(Math.hypot(e[0] - c.x, e[1] - c.y) - c.r) < 1.5);
+    });
+    ok(`hinter dem Haus (${wo}): drei Leitungen von der Nabe`, anNabe.length, 3);
+    // Und vom Verteiler führt genau eine Leitung zur Nabe.
+    const verteiler = kg.find((c) => c.text === fmtPower(v.durchsatz));
+    const zurNabe = bahnenAlle(svg).filter((p) => {
+      const pts = punkte(p, 2);
+      const a = pts[0], e = pts[pts.length - 1];
+      return verteiler && nabe && Math.abs(Math.hypot(a[0] - verteiler.x, a[1] - verteiler.y) - verteiler.r) < 1.5 &&
+        Math.abs(Math.hypot(e[0] - nabe.x, e[1] - nabe.y) - nabe.r) < 1.5;
+    });
+    ok(`hinter dem Haus (${wo}): eine Leitung vom Verteiler zur Nabe`, zurNabe.length, 1);
+    box.remove();
+  }
+  {
+    // Ohne Hauszähler zeigt die Nabe die Summe der Verbraucher.
+    const { k, svg, box } = bau({ consumers_from: "meter", house: undefined });
+    ok("hinter dem Zähler ohne Hauszähler: Summe", k._readValues().nabe, 3700);
+    ok("die Summe steht in der Nabe", texte(svg).includes(fmtPower(3700)), true);
+    box.remove();
+  }
+  {
+    // Ohne Verbraucher ändert die Einstellung nichts.
+    const a = karte({ sources: [{ power: "sensor.pv" }], grid: "sensor.netz", house: "sensor.haus" }, S());
+    const b = karte({ sources: [{ power: "sensor.pv" }], grid: "sensor.netz", house: "sensor.haus", consumers_from: "meter" }, S());
+    ok("ohne Verbraucher: hinter dem Zähler ändert nichts", b.svg.innerHTML, a.svg.innerHTML);
+    a.box.remove(); b.box.remove();
+  }
+
+  // --- Leitung Verteiler → Nabe: gerade, nie rückwärts, nicht dünner als dahinter
+  {
+    const fehler = [];
+    for (const [w, h] of [[390, 700], [390, 460], [1000, 500], [340, 900]]) for (const wo of ["meter", "house"]) for (const nV of [1, 2, 3]) {
+      const { k, svg, box } = bau({ consumers_from: wo, consumers: DREI.slice(0, nV) }, S(), w, h);
+      const v = k._readValues();
+      const kg = kugeln(svg);
+      const verteiler = kg.find((c) => c.text === fmtPower(v.durchsatz));
+      const nabe = wo === "meter" ? kg.find((c) => c.text === fmtPower(v.nabe)) : kg.find((c) => c.text.includes("Zuhause"));
+      const amRand = (pt, c) => c && Math.abs(Math.hypot(pt[0] - c.x, pt[1] - c.y) - c.r) < 1.5;
+      const stamm = bahnenAlle(svg).find((p) => { const q = punkte(p, 2); return amRand(q[0], verteiler) && amRand(q[2], nabe); });
+      const speichen = bahnenAlle(svg).filter((p) => amRand(punkte(p, 2)[0], nabe));
+      const name = `${w}x${h} ${wo} v${nV}`;
+      if (!stamm || speichen.length !== nV) { fehler.push(name + ": Leitungen fehlen"); box.remove(); continue; }
+      // Nie rückwärts: entlang des Weges wächst der Abstand zum Verteiler stetig.
+      const pts = punkte(stamm, 40);
+      const ab = pts.map((q) => Math.hypot(q[0] - verteiler.x, q[1] - verteiler.y));
+      if (ab.some((x, i) => i && x < ab[i - 1] - 0.05)) fehler.push(name + ": läuft zurück");
+      // Die Zuleitung trägt die Summe: keine Leitung dahinter darf breiter sein.
+      const breit = (p) => +p.getAttribute("stroke-width");
+      const breiteste = Math.max(...speichen.map(breit));
+      if (breiteste > breit(stamm) + 0.05) fehler.push(name + `: Leitung dahinter ${breiteste.toFixed(2)} breiter als Zuleitung ${breit(stamm).toFixed(2)}`);
+      // Und die Zuleitung ist lang genug, um nicht zum Klecks gekappt zu werden.
+      const vb = svg.getAttribute("viewBox").split(" ").map(Number);
+      if (stamm.getTotalLength() < 0.039 * Math.min(vb[2], vb[3] * 0.78)) fehler.push(name + ": Zuleitung zu kurz");
+      box.remove();
+    }
+    ok("Zuleitung zur Nabe: vorhanden, nie rückwärts, lang genug, nicht schmaler als dahinter", fehler.slice(0, 4).join(" | "), "");
+  }
+  {
+    // Eine Quelle, drei Verbraucher, volle Hauskugel, keine Wallbox, breite
+    // Karte: hier rückte die Hauskugel bis auf 3 px an die Sammelkugel.
+    const { k, svg, box } = karte({ sources: [{ power: "sensor.pv" }], grid: "sensor.netz", house: "sensor.haus",
+      consumers: DREI, consumers_from: "house" }, S(), 390, 460);
+    const v = k._readValues();
+    const kg = kugeln(svg);
+    const sammel = kg.find((c) => c.text === fmtPower(v.production));
+    const haus = kg.find((c) => c.text.includes("Zuhause"));
+    const vb = svg.getAttribute("viewBox").split(" ").map(Number);
+    const W = Math.min(vb[2], vb[3] * 0.78);
+    ok("volle Hauskugel hält Abstand zur Sammelkugel",
+      !!sammel && !!haus && Math.hypot(sammel.x - haus.x, sammel.y - haus.y) - sammel.r - haus.r >= 0.018 * W, true);
+    box.remove();
+  }
+
+  // Anordnung hinter dem Haus, über alle Formate.
+  {
+    let fehler = [];
+    for (const [w, h] of [[390, 700], [1000, 500], [340, 900], [560, 620], [400, 760], [390, 580]]) {
+      for (const wo of ["meter", "house"]) for (const nQ of [0, 1, 2, 3, 4, 5]) for (const nV of [1, 2, 3])
+      for (const [nB, nW, autos] of [[0, 0, 0], [2, 1, 1], [2, 2, 1]]) {
+        const cfg = {
+          consumers_from: wo,
+          sources: ["sensor.pv", "sensor.q2", "sensor.q3", "sensor.q2", "sensor.q3"].slice(0, nQ).map((p) => ({ power: p })),
+          consumers: DREI.slice(0, nV),
+          batteries: [{ power: "sensor.b1", soc: "sensor.soc" }, { power: "sensor.b1", soc: "sensor.soc" }].slice(0, nB),
+          wallboxes: [{ power: "sensor.wb1", ...(autos ? { car: "sensor.a1" } : {}) },
+                      { power: "sensor.wb2", ...(autos ? { car: "sensor.a2" } : {}) }].slice(0, nW),
+        };
+        const { svg, box } = bau(cfg, S(), w, h);
+        const name = `${w}x${h} ${wo} q${nQ} v${nV} b${nB} w${nW}${autos ? "a" : ""}`;
+        const k = kugeln(svg);
+        const vb = svg.getAttribute("viewBox").split(" ").map(Number);
+        const W = Math.min(vb[2], vb[3] * 0.78);
+        // Abstand zwischen zwei Kugeln in Anteilen der Breite: so eng wie
+        // anderswo auf der Karte höchstens (gut 0,025), mit etwas Spielraum.
+        for (let i = 0; i < k.length; i++) {
+          if (k[i].x + k[i].r > vb[2] + 0.5 || k[i].y - k[i].r < -0.5 || k[i].y + k[i].r > vb[3] + 0.5) fehler.push(name + ": Rand");
+          for (let j = i + 1; j < k.length; j++) {
+            if (Math.hypot(k[i].x - k[j].x, k[i].y - k[j].y) < k[i].r + k[j].r + 0.018 * W) fehler.push(name + ": " + k[i].text.slice(0, 8) + "/" + k[j].text.slice(0, 8));
+          }
+        }
+        const vk = k.filter((c) => DREI.slice(0, nV).some((d) => c.text.includes(d.name)));
+        if (vk.length !== nV) fehler.push(name + ": " + vk.length + " Verbraucher");
+        else if (vk.some((c) => c.r < 0.06 * W - 0.5)) fehler.push(name + ": zu klein");
+        const q = querDurch(svg);
+        if (q.length) fehler.push(name + ": quer " + q.join(","));
+        box.remove();
+      }
+    }
+    ok("hinter dem Haus: Anordnung sauber auf allen Formaten", fehler.slice(0, 5).join(" | "), "");
+  }
+
+  // Editor: die Auswahl unter der Liste.
+  {
+    ok("Editor: Auswahl unter der Verbraucherliste",
+      JSON.stringify(LISTEN_SCHEMA.consumers({})).includes("consumers_from"), true);
+    ok("Editor: Vorgabe steht nicht drin",
+      fromForm({ ...toForm({ type: "x" }), consumers_from: "dist" }, { type: "x" }).consumers_from, undefined);
+    ok("Editor: Zähler landet drin",
+      fromForm({ ...toForm({ type: "x" }), consumers_from: "meter" }, { type: "x" }).consumers_from, "meter");
+    ok("Editor: hin und zurück", toForm({ type: "x", consumers_from: "house" }).consumers_from, "house");
+    ok("Editor: Hilfetext in HELFER", typeof HELFER.consumers_from === "string" && HELFER.consumers_from.length > 40, true);
+    const { ed, stand } = editor({ type: "custom:power-flow-card-plus-mobile", house: "sensor.haus",
+      consumers: [{ name: "Haus 1", rest: true }, { name: "Firma", power: "sensor.wp" }] });
+    await warte(60);
+    ed._oeffne("consumers"); await warte();
+    const formen = [...ed.querySelectorAll("ha-form")];
+    const unten = formen[formen.length - 1];
+    ok("Editor: das Feld ist da", felder(unten).includes("consumers_from"), true);
+    unten.tippe("consumers_from", "meter"); await warte();
+    ok("Editor: Auswahl kommt an", stand.letzte.consumers_from, "meter");
+    ok("Editor: die Verbraucher bleiben", (stand.letzte.consumers || []).length, 2);
+    ok("Hauptmenü sagt es", ed._zusammenfassung("consumers"), "2 von 3, einer als Rest, hinter dem Zähler");
+    ed.remove();
+  }
+
   // --- Symbole: ein einzelner Verbraucher trägt das Symbol des Hauses --------
   // Ohne Home Assistant gibt es kein <ha-icon>; ein Ersatz macht sichtbar,
   // welches Symbol die Karte gewählt hat. Ganz am Ende, weil er bleibt.

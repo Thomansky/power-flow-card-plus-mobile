@@ -5,6 +5,37 @@ die Versionsnummern [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unveröffentlicht]
 
+## [1.12.0-beta.2] – 2026-10-11
+
+### Neu (Beta)
+
+* **Verbraucher wahlweise hinter dem Haus** (`consumers_from`, im Editor
+  unter der Verbraucherliste). Neben dem bisherigen Bild – die Verbraucher
+  ersetzen den Hauskreis – gibt es jetzt Verteiler → Haus → Verbraucher,
+  etwa Haus 1, Haus 2 und Firma hinter dem Gesamtzähler. Das Haus steht dann
+  als kleine Zählerkugel mit der Summe (`meter`) oder als gewohnte Hauskugel
+  mit Herkunftsring (`house`) und ist die Nabe, von der gerade Leitungen
+  sternförmig zu den Verbrauchern gehen.
+
+  Bei einem oder zwei Verbrauchern sitzt die Nabe auf der Linie vom
+  Verteiler; bei dreien stehen Nabe und Verbraucher als Raster aus zwei mal
+  zwei, mit der schrägen Leitung durch die Mitte – mehr Reihen gibt es
+  zwischen den Leitungen der Quellen und den Wallboxen nicht. Ohne
+  Hauszähler zeigt die Nabe die Summe der Verbraucher. Keine Leitung hinter
+  der Nabe wird breiter gezeichnet als die Zuleitung, die die Summe trägt.
+  Mit der Zählerkugel haben die Verbraucher ihre volle Größe, mit der
+  Hauskugel sind alle Kreise dort etwas kleiner. Ohne die Einstellung, und
+  ohne Verbraucher, ändert sich nichts.
+
+### Behoben
+
+* **Editor: Eingaben auf den Seiten Netz, Zuhause und Darstellung sowie
+  unter den Listen warfen Teile der Konfiguration weg**, die kein Formular
+  zeigt: Quellen in der alten Schreibweise (`pv`, `external`), deren Symbole
+  und Farben, und Angaben wie `colors.bus`, `colors.sources` oder eine Liste
+  von Wallbox-Farben. Die Formulare überschreiben jetzt nur noch, was sie
+  selbst kennen.
+
 ## [1.12.0-beta.1] – 2026-10-11
 
 ### Neu (Beta)
@@ -549,7 +580,8 @@ Erste Veröffentlichung.
   hohe, schmale Flächen ausgelegt.
 * Reine Anzeige, es lässt sich nichts steuern.
 
-[Unveröffentlicht]: https://github.com/thomansky/power-flow-card-plus-mobile/compare/v1.12.0-beta.1...HEAD
+[Unveröffentlicht]: https://github.com/thomansky/power-flow-card-plus-mobile/compare/v1.12.0-beta.2...HEAD
+[1.12.0-beta.2]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.12.0-beta.2
 [1.12.0-beta.1]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.12.0-beta.1
 [1.11.1]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.11.1
 [1.11.0]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.11.0

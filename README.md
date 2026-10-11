@@ -180,6 +180,7 @@ colors:
 | `grid` | – | Netzleistung, positiv = Bezug. Auch als Paar `consumption`/`production`. |
 | `house` | – | Hausverbrauch gesamt |
 | `consumers` | `[]` | *Beta.* Bis zu drei Verbraucher statt des Hauskreises. Je `power` (auch Liste), `name`, `icon`, `color`, `rest` (Hausverbrauch minus die anderen) – siehe unten. |
+| `consumers_from` | `dist` | *Beta.* Woher die Verbraucher gespeist werden: `dist` vom Verteiler, `meter` hinter einer kleinen Zählerkugel, `house` hinter der Hauskugel. |
 | `grid_limit` | – | Einspeiselimit: Entität in W, kW oder %, oder feste Zahl in W. Siehe unten. |
 | `pv_peak` | – | Spitzenleistung der Anlage in kWp – nur nötig, wenn das Limit in % kommt |
 | `autarky` | – | Optional: eigener Sensor in % statt der Rechnung. Ist er nicht lesbar, rechnet die Karte und schreibt ein ≈ davor. |
@@ -588,6 +589,48 @@ Fächer durch. Wird es eng (breite Karte, fünf Quellen, Wallboxen), werden die
 Kreise etwas kleiner. Platz für die Wallboxen wird freigehalten, sobald
 welche eingerichtet sind, damit der Fächer nicht springt, wenn ein Auto zu
 laden beginnt.
+
+### Am Verteiler oder hinter dem Haus
+
+Woher die Verbraucher gespeist werden, lässt sich umstellen – im Editor unter
+der Verbraucherliste, in YAML mit `consumers_from`:
+
+| Wert | Bild |
+|---|---|
+| `dist` *(Vorgabe)* | Verteiler → Verbraucher. Die Verbraucher ersetzen den Hauskreis (wie oben beschrieben). |
+| `meter` | Verteiler → **kleine Zählerkugel** → Verbraucher. Die Zählerkugel zeigt nur den Gesamtverbrauch, im Stil der beiden Sammelkugeln in der Mitte. |
+| `house` | Verteiler → **Hauskugel** → Verbraucher. Die gewohnte Hauskugel bleibt stehen, mit Herkunftsring. |
+
+```yaml
+house: sensor.e3dc_hausverbrauch
+consumers_from: meter
+consumers:
+  - name: Haus 1
+    rest: true
+  - name: Haus 2
+    power: sensor.haus_2_leistung
+  - name: Firma
+    icon: mdi:office-building
+    power: sensor.firma_leistung
+```
+
+Hinter dem Haus ist das Haus die Nabe, von der gerade Leitungen sternförmig
+zu den Verbrauchern gehen. Bei einem oder zwei Verbrauchern sitzt sie auf der
+Linie vom Verteiler. Bei dreien stehen Nabe und Verbraucher als Raster aus
+zwei mal zwei: links oben das Haus, rechts oben der erste, links unten der
+zweite, rechts unten der dritte – mit der schrägen Leitung durch die Mitte.
+Mehr Reihen gibt es zwischen den Leitungen der Quellen und den Wallboxen
+nicht.
+
+Mit der **Zählerkugel** haben die Verbraucher ihre volle Größe. Mit der
+**vollen Hauskugel** sind Hauskugel und Verbraucher immer etwas kleiner
+(gut 85 bis 95 %), weil beide nebeneinander in die rechte Hälfte passen
+müssen – das hängt an der Breite, nicht an der Höhe. Nur mit drei
+Verbrauchern auf einer breiten Karte mit zwei oder drei Quellen wird es noch
+etwas enger; dort hilft eine höhere Karte (`min_height`).
+
+Die Nabe zeigt den Hausverbrauch (bereinigt um Geräte hinter dem Zähler);
+ohne Hauszähler die Summe der Verbraucher.
 
 Jeder Verbraucher trägt den Herkunftsring wie bisher das Haus
 (`house_mix`), seine Leitung und seine Fließpunkte tragen seine eigene Farbe.

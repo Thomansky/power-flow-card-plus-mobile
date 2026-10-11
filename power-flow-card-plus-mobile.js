@@ -295,7 +295,89 @@ function verbraucherFaecher(nV, aspect, yDist, oben, unten) {
   };
 }
 
-function buildNodes(nBat, spalten, autos, nQuellen, aspect, nVerbraucher, ladeGeplant) {
+/**
+ * Wo Hauskugel und Verbraucher stehen, wenn die Verbraucher hinter dem Haus
+ * hängen: Verteiler → Haus → Haus 1, Haus 2, Firma. Das Haus ist dann die
+ * Nabe, von der gerade Leitungen sternförmig zu den Verbrauchern gehen.
+ *
+ * Bei einem oder zwei Verbrauchern sitzt die Nabe auf der Linie vom
+ * Verteiler; einer steht rechts daneben, zwei stehen schräg darüber und
+ * darunter. Bei dreien reicht der Platz rechts vom Verteiler nur für ein
+ * Raster aus zwei mal zwei: links oben die Nabe, rechts oben der erste
+ * (waagerecht verbunden), links unten der zweite (senkrecht), rechts unten
+ * der dritte (schräg durch die Mitte, wo zwischen den vier Kreisen Platz
+ * ist). Jede andere Anordnung bräuchte eine dritte Reihe, und die gibt es
+ * zwischen Quellenleitungen und Wallboxen nicht.
+ *
+ * `voll` heißt: die Nabe ist die gewohnte Hauskugel, sonst eine kleine
+ * Zählerkugel wie die beiden Sammelkugeln. Passt etwas nicht, schrumpfen
+ * Nabe und Verbraucher gemeinsam, bis es passt.
+ */
+function verbraucherHinterHaus(nV, aspect, yDist, oben, unten, voll, yGen) {
+  // Zwischen zwei Verbrauchern genügt Luft; zwischen Nabe und Verbraucher
+  // muss eine Leitung sichtbar bleiben, das braucht etwas mehr. Dasselbe gilt
+  // für die Leitung vom Verteiler zur Nabe: sie trägt den ganzen
+  // Hausverbrauch, und die Linienbreite ist auf ein Viertel der Weglänge
+  // gekappt – zu kurz, und sie wäre dünner als die Leitungen dahinter.
+  const luft = 0.03;
+  const leitung = 0.04;
+  const dist = (a, b) => Math.hypot(a.x - b.x, (a.y - b.y) / aspect);
+  const verteiler = { x: 0.5, y: yDist, r: 0.074 };
+  // Die Sammelkugel darüber: bei einer Quelle hält sonst nichts das Raster
+  // von ihr fern.
+  const sammel = { x: 0.5, y: yGen, r: 0.074 };
+  let bestes = null;
+  for (let s = 1; s >= 0.6; s -= 0.02) {
+    const rH = (voll ? 0.1 : 0.074) * s;
+    const r = 0.085 * s;
+    const xR = 0.975 - r;
+    let nabe, knoten;
+    if (nV <= 2) {
+      // Nabe auf der Linie, so nah am Verteiler, wie die Leitung es erlaubt.
+      nabe = { x: verteiler.x + verteiler.r + leitung + rH, y: yDist, r: rH };
+      if (nV === 1) {
+        knoten = [{ x: xR, y: yDist, r }];
+      } else {
+        const e = r + luft / 2;
+        knoten = [{ x: xR, y: yDist - e * aspect, r }, { x: xR, y: yDist + e * aspect, r }];
+      }
+    } else {
+      // Spalten- und Zeilenabstand gleich: so läuft die schräge Leitung genau
+      // durch die Mitte, mit gleich viel Abstand zu beiden Nachbarn.
+      const raster = Math.max(rH + r + leitung, 2 * r + luft);
+      const spalte = raster;
+      const e = raster / 2;
+      const x1 = xR - spalte;
+      nabe = { x: x1, y: yDist - e * aspect, r: rH };
+      knoten = [
+        { x: xR, y: yDist - e * aspect, r },
+        { x: x1, y: yDist + e * aspect, r },
+        { x: xR, y: yDist + e * aspect, r },
+      ];
+    }
+    const alle = [nabe, ...knoten];
+    const oberkante = Math.min(...alle.map((k) => k.y - k.r * aspect));
+    const unterkante = Math.max(...alle.map((k) => k.y + k.r * aspect));
+    // Prüfen: Rand, Platz oben und unten, Leitungen mit Länge, nichts berührt
+    // sich, und keine Kugel liegt dem Verteiler im Weg.
+    let passt = oberkante >= oben - 1e-9 && unterkante <= unten + 1e-9 &&
+      alle.every((k) => k.x + k.r <= 0.975 + 1e-9) &&
+      dist(verteiler, nabe) - verteiler.r - nabe.r >= leitung - 1e-9 &&
+      knoten.every((k) => dist(nabe, k) - nabe.r - k.r >= leitung - 1e-9);
+    for (let i = 0; passt && i < alle.length; i++) {
+      if (dist(alle[i], verteiler) < alle[i].r + verteiler.r + 0.02) passt = false;
+      if (dist(alle[i], sammel) < alle[i].r + sammel.r + 0.02) passt = false;
+      for (let j = i + 1; passt && j < alle.length; j++) {
+        if (dist(alle[i], alle[j]) < alle[i].r + alle[j].r + 0.02) passt = false;
+      }
+    }
+    bestes = { nabe, knoten, unterkante, nabeAufLinie: nV <= 2 };
+    if (passt) break;
+  }
+  return bestes;
+}
+
+function buildNodes(nBat, spalten, autos, nQuellen, aspect, nVerbraucher, ladeGeplant, ueberHaus) {
   const reihe = QUELL_REIHE[Math.min(5, nQuellen)] || [];
   const ziele = QUELL_ZIEL[Math.min(5, nQuellen)] || [];
 
@@ -359,12 +441,15 @@ function buildNodes(nBat, spalten, autos, nQuellen, aspect, nVerbraucher, ladeGe
   // eingerichtet sind – auch wenn gerade keine lädt. Sonst spränge die Säule
   // jedes Mal, wenn ein Auto anfängt oder aufhört zu laden. Freigehalten wird
   // für den höchsten Stand der Wallboxen, den mit Auto darunter.
+  //
+  // Hängen sie hinter dem Haus (`ueberHaus`: "meter" oder "house"), bleibt
+  // das Haus als Nabe stehen – siehe verbraucherHinterHaus.
   let wegY = null;
-  if (nVerbraucher === 1) {
+  N._nabeAufLinie = null;
+  if (nVerbraucher === 1 && !ueberHaus) {
     N.con1 = { ...N.house };
     delete N.house;
-  } else if (nVerbraucher >= 2) {
-    delete N.house;
+  } else if (nVerbraucher >= 1) {
     // Oben: ab zwei Quellen hängt die Leitung der rechten bis auf die Höhe
     // der Sammelkugel herunter und läuft dort waagerecht hinein. Darunter
     // bleiben, samt halber Linienbreite und etwas Luft.
@@ -373,11 +458,19 @@ function buildNodes(nBat, spalten, autos, nQuellen, aspect, nVerbraucher, ladeGe
     // Luft, darunter Bogen und gerade Anfahrt bis zum Kreis.
     const wbOben = yWb - WB_RADIUS * aspect;
     const unten = ladeGeplant ? wbOben - (ANFAHRT + 0.02 + 0.012 + 0.015) * aspect : 0.97;
-    const s = verbraucherFaecher(Math.min(3, nVerbraucher), aspect, yDist, oben, unten);
+    let s;
+    if (ueberHaus) {
+      s = verbraucherHinterHaus(Math.min(3, nVerbraucher), aspect, yDist, oben, unten, ueberHaus === "house", yGen);
+      N.house = s.nabe;
+      N._nabeAufLinie = s.nabeAufLinie;
+    } else {
+      delete N.house;
+      s = verbraucherFaecher(Math.min(3, nVerbraucher), aspect, yDist, oben, unten);
+    }
     s.knoten.forEach((k, i) => { N["con" + (i + 1)] = k; });
 
-    // Der Weg zu den Ladespalten läuft waagerecht unter dem Fächer durch.
-    // Liegt die gewohnte Höhe schon darunter, bleibt alles, wie es war.
+    // Der Weg zu den Ladespalten läuft waagerecht unter den Verbrauchern
+    // durch. Liegt die gewohnte Höhe schon darunter, bleibt alles, wie es war.
     if (spalten > 0) {
       const tiefste = s.unterkante + (0.012 + 0.015) * aspect;
       const hoechste = yLade - (WB_RADIUS + ANFAHRT + 0.02) * aspect;
@@ -443,6 +536,11 @@ const QUELL_ZIEL = [
  * herum.
  */
 function verbraucherWege(N) {
+  // Hinter dem Haus: gerade Leitungen von der Nabe aus, sternförmig.
+  const hinterHaus = ["con1", "con2", "con3"].filter((id) => N[id] && N.house);
+  if (hinterHaus.length) {
+    return hinterHaus.map((id) => ({ id, from: "house", to: id, gerade: true }));
+  }
   const wege = [];
   if (N.con1) wege.push({ id: "con1", from: "busDist", to: "con1", fa: 0, fx: "h", ta: 180, tx: "h" });
   if (N.con2) wege.push({ id: "con2", from: "busDist", to: "con2", fa: 315, fx: "v", ta: 180, tx: "h" });
@@ -453,15 +551,28 @@ function verbraucherWege(N) {
 function buildLinks(N, nQuellen) {
   const zwei = !!N.wb2;
   const ziele = QUELL_ZIEL[Math.min(5, nQuellen)] || [];
+  // Hinter dem Haus kommen die Leitungen zu den Verbrauchern erst nach der
+  // Zuleitung zum Haus – sie dürfen nicht breiter werden als diese, und
+  // dafür muss deren Breite schon feststehen. Am Verteiler bleibt die
+  // gewohnte Reihenfolge.
+  const hinterHaus = N._nabeAufLinie != null;
   const all = [
-    ...verbraucherWege(N),
+    ...(hinterHaus ? [] : verbraucherWege(N)),
     ...ziele.map((z, i) => ({
       id: "src" + (i + 1), from: "src" + (i + 1), to: "busGen",
       fa: 90, fx: "v", ta: z.ta, tx: z.tx,
     })),
     { id: "bus", from: "busGen", to: "busDist", fa: 90, fx: "v", ta: 270, tx: "v" },
     { id: "grid", from: "grid", to: "busDist", fa: 0, fx: "h", ta: 180, tx: "h" },
-    { id: "house", from: "busDist", to: "house", fa: 0, fx: "h", ta: 180, tx: "h" },
+    // Ist das Haus die Nabe der Verbraucher, führt eine gerade Leitung hin –
+    // schräg hinauf, wenn es im Raster oben links sitzt, sonst waagerecht.
+    // Mit den geraden Anfahrten der gewohnten Hausleitung lägen deren
+    // Hilfspunkte auf dem kurzen Stück übereinander, und die Linie liefe
+    // ein Stück zurück.
+    hinterHaus
+      ? { id: "house", from: "busDist", to: "house", gerade: true }
+      : { id: "house", from: "busDist", to: "house", fa: 0, fx: "h", ta: 180, tx: "h" },
+    ...(hinterHaus ? verbraucherWege(N) : []),
     { id: "bat1", from: "battery1", to: "busDist", fa: 0, fx: "h", ta: 150, tx: "v" },
     { id: "bat2", from: "battery2", to: "busDist", fa: 0, fx: "h", ta: 120, tx: "v" },
     // Bei zwei Spalten führt ein Strang vom Verteilknoten herunter und gabelt
@@ -728,6 +839,11 @@ class PowerflowPlusMobileCard extends HTMLElement {
           };
         });
       })(),
+      // Woher die Verbraucher gespeist werden: direkt vom Verteiler, an Stelle
+      // des Hauses ("dist"), oder hinter dem Haus – das dann als kleine
+      // Zählerkugel ("meter") oder als gewohnte Hauskugel ("house") stehen
+      // bleibt.
+      consumers_from: ["meter", "house"].includes(config.consumers_from) ? config.consumers_from : "dist",
       // Einspeiselimit: eine Entität in W, kW oder %, oder eine feste Zahl
       // in Watt. Kommt es in Prozent, braucht die Karte die Spitzenleistung
       // der Anlage, um daraus Watt zu machen – sonst bleibt es beim Etikett.
@@ -1302,6 +1418,11 @@ class PowerflowPlusMobileCard extends HTMLElement {
     // Summe der übrigen wäre eine Teilmenge, die wie ein Messwert aussähe.
     const consumption = house != null ? house : !c.house && consumers.length ? einzeln : null;
 
+    // Hängen die Verbraucher hinter dem Haus, zeigt das Haus als Nabe den
+    // bereinigten Hausverbrauch – ohne Hauszähler die Summe der Verbraucher,
+    // wie die Sammelkugel oben die Summe der Quellen.
+    const nabe = houseNet != null ? houseNet : !c.house && consumers.length ? einzeln : null;
+
     // Was am Verteilknoten zusammenläuft: alles, was hineinfließt. Die
     // Abflüsse – Haus, Wallboxen, Speicherladung, Einspeisung – müssten
     // dieselbe Summe ergeben. Tun sie es nicht, fehlt in der Messung etwas;
@@ -1362,7 +1483,7 @@ class PowerflowPlusMobileCard extends HTMLElement {
       // Messwert bleibt als houseRaw erhalten.
       house: houseNet,
       houseRaw: house,
-      consumers,
+      consumers, nabe,
       abzug,
       batteries, wallboxes, cars,
       production, nurAngezeigt,
@@ -1655,8 +1776,11 @@ class PowerflowPlusMobileCard extends HTMLElement {
       c.sources.length,
       R.w / R.h,
       c.consumers.length,
-      c.wallboxes.length > 0
+      c.wallboxes.length > 0,
+      c.consumers.length && c.consumers_from !== "dist" ? c.consumers_from : null
     );
+    // Hängen die Verbraucher hinter dem Haus, ist das Haus ihre Nabe.
+    const hinterHaus = !!c.consumers.length && c.consumers_from !== "dist";
     const L = buildLinks(N, c.sources.length);
     const scale = R.w / 374;
 
@@ -1684,6 +1808,12 @@ class PowerflowPlusMobileCard extends HTMLElement {
      * an dem etwas einstecken könnte; sie bleiben unberührt.
      */
     const waypoints = (link) => {
+      // Gerade Leitung von Mitte zu Mitte, an beiden Enden radial im Rand.
+      if (link.gerade) {
+        const a = P(link.from), b = P(link.to);
+        const winkel = (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI;
+        return [anchor(link.from, winkel), anchor(link.to, winkel + 180)];
+      }
       const vor = R.w * ANFAHRT;
       const s = anchor(link.from, link.fa);
       const e = anchor(link.to, link.ta);
@@ -1817,7 +1947,7 @@ class PowerflowPlusMobileCard extends HTMLElement {
       if (!q.gezaehlt) states["src" + (i + 1)] = { power: 0, color: quellFarbe(i), abseits: true };
     });
     put("bus", v.production, PAL.bus);
-    put("house", Math.max(0, z(v.house)), PAL.house);
+    put("house", Math.max(0, z(hinterHaus ? v.nabe : v.house)), PAL.house);
     v.consumers.forEach((x, i) => put("con" + (i + 1), Math.max(0, z(x.power)), verbraucherFarbe(i)));
     put("grid", Math.abs(z(v.grid)), z(v.grid) > 0 ? PAL.gridIn : PAL.grid, z(v.grid) < 0);
     v.batteries.forEach((b, i) => {
@@ -1912,6 +2042,8 @@ class PowerflowPlusMobileCard extends HTMLElement {
     // überlappt, wird nicht dichter.
     const istWeiche = (link) => link.id === "wbStamm" || link.from === "wbGabel";
     let weichenGruppe = null;
+    // Breite der Zuleitung zum Haus, wenn es die Nabe der Verbraucher ist.
+    let zuleitungBreite = null;
 
     L.forEach((link) => {
       const st = states[link.id];
@@ -1949,12 +2081,19 @@ class PowerflowPlusMobileCard extends HTMLElement {
       // Viertel ist die Grenze, ab der zwei Punkte mit Lücke daraufpassen;
       // schärfer gekappt würde eine starke Quelle dünner gezeichnet als eine
       // schwache mit längerem Weg, und die Dicke löge.
-      const lw = active
+      //
+      // Hinter dem Haus gilt zusätzlich: keine Leitung zu einem Verbraucher
+      // breiter als die Zuleitung zum Haus. Die trägt die Summe, ist aber kurz
+      // und darum gekappt; eine lange schräge Leitung zu einem kleinen
+      // Verbraucher wäre sonst breiter als sie.
+      let lw = active
         ? Math.max(1.6, Math.min(
             Math.min(9, 1.6 + Math.sqrt(st.power / 1000) * 2.2) * scale,
             laenge / 4
           ))
         : 1.6;
+      if (link.from === "house" && zuleitungBreite != null) lw = Math.min(lw, Math.max(1.6, zuleitungBreite));
+      if (link.id === "house" && link.gerade && active) zuleitungBreite = lw;
 
       // Die Gruppe sitzt dort, wo die erste Bahn der Weiche lag – also unter
       // deren Punkten. Spätere Bahnen wandern hinein und liegen damit ebenfalls
@@ -2260,13 +2399,20 @@ class PowerflowPlusMobileCard extends HTMLElement {
         v.amLimit ? WARN : SCHRIFT, v.amLimit ? 1 : 0.62);
       etikett.setAttribute("class", "limit-etikett");
     }
-    const hausRing = c.house_mix && z(v.house) > T ? mischung : null;
-
-    drawNode("house", {
-      icon: "house", mdi: IC.house || "mdi:home-assistant", title: "Zuhause", value: fmtPower(v.house),
-      tint: PAL.house, active: z(v.house) > T, entity: c.house,
-      ringSegments: hausRing,
-    });
+    if (hinterHaus && c.consumers_from === "meter") {
+      // Als Zählerkugel: nur die Summe, im Stil der beiden Sammelkugeln.
+      drawNode("house", {
+        bus: true, value: fmtPower(v.nabe), tint: PAL.house, active: true, entity: c.house,
+      });
+    } else {
+      const wert = hinterHaus ? v.nabe : v.house;
+      drawNode("house", {
+        icon: "house", mdi: IC.house || "mdi:home-assistant", title: "Zuhause", value: fmtPower(wert),
+        tint: PAL.house, active: z(wert) > T, entity: c.house,
+        ringSegments: c.house_mix && z(wert) > T ? mischung : null,
+        compact: N.house && N.house.r < 0.11,
+      });
+    }
 
     // Die Verbraucher bekommen denselben Herkunftsring wie das Haus. Ein
     // Rest zeigt beim Antippen den Hauszähler – aus dem er gerechnet ist.
@@ -2437,6 +2583,7 @@ const LABELS = {
   invert: "Vorzeichen umdrehen",
   display_only: "Nur anzeigen, nicht in die Summe rechnen",
   rest: "Rest vom Hausverbrauch",
+  consumers_from: "Wo die Verbraucher hängen",
   power_sources: "Leistung",
   icon_grid: "Symbol Netz",
   icon_house: "Symbol Zuhause",
@@ -2481,6 +2628,12 @@ const HELFER = {
     "Verbraucher – etwa der Hausverbrauch der Anlage ohne Wärmepumpe und " +
     "Werkstatt. Braucht den Hausverbrauch unter „Zuhause“. Nur einer kann der " +
     "Rest sein.",
+  consumers_from:
+    "Am Verteiler: die Verbraucher ersetzen den Hauskreis. Hinter dem Haus: " +
+    "Verteiler → Haus → Verbraucher, das Haus zeigt den Gesamtverbrauch – " +
+    "als kleine Zählerkugel nur mit der Summe, oder als gewohnte Hauskugel. " +
+    "Mit der Hauskugel sind alle Kreise dort etwas kleiner, weil Haus und " +
+    "Verbraucher nebeneinander in die rechte Hälfte passen müssen.",
   house:
     "Sind unter „Verbraucher“ einzelne Kreise eingerichtet, ersetzen sie den " +
     "Hauskreis. Dieser Wert gilt dann als Gesamtverbrauch – für die Autarkie " +
@@ -2664,6 +2817,7 @@ function toForm(cfg) {
     (Number.isFinite(c.car_match_tolerance) ? c.car_match_tolerance : 0.25) * 100
   );
   f.car_match_unique = c.car_match_unique !== false;
+  f.consumers_from = ["meter", "house"].includes(c.consumers_from) ? c.consumers_from : "dist";
   return f;
 }
 
@@ -2685,9 +2839,14 @@ function fromForm(d, cfg) {
   neu.car_match_unique =
     neu.car_match && d.car_match_unique === false ? false : undefined;
 
+  // "dist" ist die Vorgabe und muss nicht in der Konfiguration stehen.
+  neu.consumers_from = ["meter", "house"].includes(d.consumers_from) ? d.consumers_from : undefined;
+
   neu.title = d.title || undefined;
-  neu.pv = d.pv || undefined;
-  neu.external = d.external || undefined;
+  // `pv` und `external` (alte Schreibweise der Quellen) zeigt kein Formular –
+  // die Quellen hat ihre eigene Listenseite. Hier wurden sie früher auf das
+  // gesetzt, was das Formular dazu sagte, also nichts: jede Eingabe auf den
+  // Seiten Netz, Zuhause, Darstellung oder unter einer Liste warf sie weg.
   neu.house = d.house || undefined;
   // Eine feste Zahl in der Konfiguration überlebt den Editor unangetastet;
   // sonst gilt, was das Feld sagt.
@@ -2707,13 +2866,26 @@ function fromForm(d, cfg) {
     neu.grid = d.grid || undefined;
   }
 
+  // Symbole und Farben: nur überschreiben, was die Formulare kennen, und
+  // alles andere stehen lassen – icons.pv, colors.bus, colors.sources und
+  // was sonst noch in YAML stehen darf. Vorher wurden beide aus den
+  // Formularfeldern neu gebaut und verloren dabei alles Übrige.
+  const symbolAlt = istPaar(cfg.icons) ? cfg.icons : {};
   const symbole = clean({
+    ...symbolAlt,
     grid: d.icon_grid,
     house: d.icon_house,
   });
   neu.icons = Object.keys(symbole).length ? symbole : undefined;
 
+  // Wallboxen und Autos dürfen in YAML eine Liste von Farben haben; das
+  // Formular kennt nur die eine. Steht eine Liste da und das Feld ist leer,
+  // bleibt die Liste.
+  const farbeAlt = istPaar(cfg.colors) ? cfg.colors : {};
+  const eineFarbe = (feld, schluessel) =>
+    d[feld] || typeof farbeAlt[schluessel] === "string" ? d[feld] : farbeAlt[schluessel];
   const farben = clean({
+    ...farbeAlt,
     grid_import: d.color_grid_import,
     grid_export: d.color_grid_export,
     house: d.color_house,
@@ -2721,8 +2893,8 @@ function fromForm(d, cfg) {
     battery_charge: d.color_battery_charge,
     battery_discharge: d.color_battery_discharge,
     // Eine Farbe pro Knotentyp; die Karte färbt damit alle Wallboxen bzw. Autos.
-    wallboxes: d.color_wallboxes,
-    cars: d.color_cars,
+    wallboxes: eineFarbe("color_wallboxes", "wallboxes"),
+    cars: eineFarbe("color_cars", "cars"),
   });
   neu.colors = Object.keys(farben).length ? farben : undefined;
 
@@ -2821,9 +2993,19 @@ const SEITEN_SCHEMA = {
  * wo man die Geräte einrichtet – nicht in eine Sammelseite, auf der man sie
  * erst suchen muss.
  */
-const LISTEN_TITEL = { cars: "Zuordnung", wallboxes: "Zähler und Farben" };
+const LISTEN_TITEL = { cars: "Zuordnung", wallboxes: "Zähler und Farben", consumers: "Anordnung" };
 
 const LISTEN_SCHEMA = {
+  consumers: () => [
+    {
+      name: "consumers_from",
+      selector: { select: { mode: "list", options: [
+        { value: "dist", label: "Am Verteiler – an Stelle des Hauses" },
+        { value: "meter", label: "Hinter dem Haus – als kleine Zählerkugel" },
+        { value: "house", label: "Hinter dem Haus – als Hauskugel" },
+      ] } },
+    },
+  ],
   batteries: () => [
     { name: "color_battery", selector: SEL_COLOR },
     { type: "grid", name: "", schema: [
@@ -3242,7 +3424,9 @@ class PowerflowPlusMobileEditor extends HTMLElement {
         const liste = alsListe(c.consumers);
         if (!liste.length) return "keine – ein Hauskreis";
         const rest = liste.some((x) => x && x.rest);
-        return liste.length + " von 3" + (rest ? ", einer als Rest" : "");
+        const wo = c.consumers_from === "meter" ? ", hinter dem Zähler"
+          : c.consumers_from === "house" ? ", hinter dem Haus" : "";
+        return liste.length + " von 3" + (rest ? ", einer als Rest" : "") + wo;
       }
       case "grid": return istPaar(c.grid) ? "zwei Sensoren" : kurz(c.grid);
       case "batteries": {

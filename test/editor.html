@@ -117,6 +117,50 @@ const auswahl = (form, name) => {
     ed.remove();
   }
 
+  // --- Formulare lassen stehen, was sie nicht kennen -------------------------
+  // fromForm setzte pv/external auf das, was das Formular dazu sagte (nichts),
+  // und baute Symbole und Farben nur aus den Formularfeldern neu. Jede Eingabe
+  // auf Netz, Zuhause, Darstellung oder unter einer Liste warf das weg.
+  {
+    const VOLL = { type: "custom:power-flow-card-plus-mobile", house: "sensor.haus",
+      pv: "sensor.pv", external: "sensor.ext",
+      icons: { pv: "mdi:solar-panel", external: "mdi:wind-turbine", grid: "mdi:transmission-tower" },
+      colors: { pv: "#FFAA00", bus: "#123456", sources: ["#111111", "#222222"],
+                wallboxes: ["#AA0000", "#00AA00"], house: "#33CC66" },
+      consumers: [{ name: "Haus 1", rest: true }, { name: "Firma", power: "sensor.wp" }] };
+    const bleibt = (c) => JSON.stringify({ pv: c.pv, external: c.external, icons: c.icons, colors: c.colors });
+    const soll = bleibt(VOLL);
+    // Unter der Verbraucherliste
+    {
+      const { ed, stand } = editor(VOLL);
+      await warte(60);
+      ed._oeffne("consumers"); await warte();
+      const formen = [...ed.querySelectorAll("ha-form")];
+      formen[formen.length - 1].tippe("consumers_from", "meter"); await warte();
+      ok("Verbraucher-Anordnung: alte Quellen, Symbole, Farben bleiben", bleibt(stand.letzte), soll);
+      ed.remove();
+    }
+    // Auf der Seite Darstellung
+    {
+      const { ed, stand } = editor(VOLL);
+      await warte(60);
+      ed._oeffne("anzeige"); await warte();
+      ed.querySelector("ha-form").tippe("title", "Mein Fluss"); await warte();
+      ok("Darstellung: alte Quellen, Symbole, Farben bleiben", bleibt(stand.letzte), soll);
+      ed.remove();
+    }
+    // Ein Feld, das das Formular kennt, lässt sich weiter leeren.
+    {
+      const { ed, stand } = editor(VOLL);
+      await warte(60);
+      ed._oeffne("house"); await warte();
+      ed.querySelector("ha-form").tippe("color_house", undefined); await warte();
+      ok("Zuhause: die Hausfarbe lässt sich leeren", (stand.letzte.colors || {}).house, undefined);
+      ok("Zuhause: die übrigen Farben bleiben dabei", JSON.stringify((stand.letzte.colors || {}).sources), JSON.stringify(["#111111", "#222222"]));
+      ed.remove();
+    }
+  }
+
   // --- Autos: Seite, Felder, Zuordnung ---------------------------------------
   {
     const { ed, stand } = editor({ type: "custom:power-flow-card-plus-mobile", house: "sensor.haus" });
