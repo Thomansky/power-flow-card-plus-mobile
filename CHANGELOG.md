@@ -5,6 +5,32 @@ die Versionsnummern [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unveröffentlicht]
 
+## [1.12.0-beta.1] – 2026-10-11
+
+### Neu (Beta)
+
+* **Bis zu drei Verbraucher statt des einen Hauskreises** (`consumers`, im
+  Editor unter *Verbraucher*). Je Verbraucher ein Sensor oder mehrere
+  (addiert), Name, Symbol und Farbe. Einer darf der **Rest** sein
+  (`rest: true`): Hausverbrauch minus alle anderen – nie negativ, ohne
+  Hausverbrauch „–“. Der Hausverbrauch bleibt der Gesamtverbrauch für die
+  Autarkie; ist keiner eingetragen, gilt die Summe der Verbraucher, ist er
+  nur gerade nicht lesbar, bleibt die Autarkie leer. Im Editor wandert der
+  Rest wie ein Optionsfeld; ein zweiter Rest aus YAML zählt nicht und behält
+  seinen Sensor.
+
+  Ein einzelner Verbraucher steht, wo das Haus stand. Zwei oder drei stehen
+  als Fächer rechts vom Verteilknoten: der erste auf dessen Linie, der zweite
+  rechts darüber, der dritte rechts darunter, die Leitungen über und unter
+  dem ersten hinweg. Eine gerade Säule hätte auf breiten Karten mit fünf
+  Quellen und Wallboxen nur unlesbar kleine Kreise erlaubt. Die Wege zu den
+  Wallboxen laufen unter dem Fächer durch; mit drei Verbrauchern verlässt der
+  Strang den Verteilknoten unten statt bei 60°.
+
+  Herkunftsring wie beim Haus, Herkunftspunkte auf den Leitungen, Antippen
+  öffnet den Sensor (beim Rest den Hausverbrauch). Ohne `consumers` ändert
+  sich nichts.
+
 ## [1.11.1] – 2026-10-11
 
 ### Geändert
@@ -523,7 +549,8 @@ Erste Veröffentlichung.
   hohe, schmale Flächen ausgelegt.
 * Reine Anzeige, es lässt sich nichts steuern.
 
-[Unveröffentlicht]: https://github.com/thomansky/power-flow-card-plus-mobile/compare/v1.11.1...HEAD
+[Unveröffentlicht]: https://github.com/thomansky/power-flow-card-plus-mobile/compare/v1.12.0-beta.1...HEAD
+[1.12.0-beta.1]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.12.0-beta.1
 [1.11.1]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.11.1
 [1.11.0]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.11.0
 [1.10.0]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.10.0

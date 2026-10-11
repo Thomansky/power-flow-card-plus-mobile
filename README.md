@@ -179,6 +179,7 @@ colors:
 | `pv`, `external` | – | Ältere Schreibweise, wird auf die ersten beiden Quellen abgebildet. |
 | `grid` | – | Netzleistung, positiv = Bezug. Auch als Paar `consumption`/`production`. |
 | `house` | – | Hausverbrauch gesamt |
+| `consumers` | `[]` | *Beta.* Bis zu drei Verbraucher statt des Hauskreises. Je `power` (auch Liste), `name`, `icon`, `color`, `rest` (Hausverbrauch minus die anderen) – siehe unten. |
 | `grid_limit` | – | Einspeiselimit: Entität in W, kW oder %, oder feste Zahl in W. Siehe unten. |
 | `pv_peak` | – | Spitzenleistung der Anlage in kWp – nur nötig, wenn das Limit in % kommt |
 | `autarky` | – | Optional: eigener Sensor in % statt der Rechnung. Ist er nicht lesbar, rechnet die Karte und schreibt ein ≈ davor. |
@@ -539,6 +540,61 @@ null abgeschnitten – dort stand dann `0 W` und niemand wusste, warum.
 In die **Erzeugung** zählt eine ziehende Quelle nicht mit; der Sammelknoten
 summiert nur, was tatsächlich hereinkommt. Im Ring ums Haus taucht sie
 ebenfalls nicht auf – sie ist ja gerade keine Quelle.
+
+---
+
+## Verbraucher statt eines Hauses *(Beta)*
+
+Statt des einen Hauskreises lassen sich bis zu drei Verbraucher zeigen –
+etwa das Haus, die Wärmepumpe und die Werkstatt. Im Editor unter
+**Verbraucher**, in YAML:
+
+```yaml
+house: sensor.e3dc_hausverbrauch     # bleibt der Gesamtzähler
+consumers:
+  - name: Haus
+    rest: true                       # Hausverbrauch minus die anderen
+  - name: Wärmepumpe
+    icon: mdi:heat-pump
+    power: sensor.waermepumpe_leistung
+  - name: Werkstatt
+    icon: mdi:printer-3d
+    power:                           # mehrere Sensoren werden addiert
+      - sensor.drucker_1
+      - sensor.drucker_2
+```
+
+**Ein Verbraucher darf der Rest sein** (`rest: true`, im Editor „Rest vom
+Hausverbrauch“). Er braucht keinen eigenen Sensor: Die Karte nimmt den
+Hausverbrauch unter `house` und zieht alle anderen Verbraucher ab. Das ist
+der typische Fall, wenn die Anlage einen Gesamtwert liefert und einzelne
+große Verbraucher gesondert gemessen werden. Ein Rest wird nie negativ; ohne
+Hausverbrauch steht dort „–“ statt einer 0, die wie ein Messwert aussähe.
+Hängen Wallboxen oder Speicher hinter dem Hauszähler, wird mit dem
+bereinigten Hauswert gerechnet. Nur einer kann der Rest sein: Schaltet man
+ihn im Editor bei einem anderen an, wandert er dorthin.
+
+**Der Hausverbrauch bleibt der Gesamtverbrauch** – für die Autarkie und für
+den Rest. Ist keiner eingetragen, gilt die Summe der Verbraucher. Ist einer
+eingetragen, aber gerade nicht lesbar, bleibt die Autarkie leer – die Summe
+der übrigen wäre nur ein Teil des Verbrauchs.
+
+**Wie sie stehen:** Ein einzelner Verbraucher steht genau dort, wo das Haus
+stand, und ist so groß wie es. Zwei oder drei stehen als Fächer rechts vom
+Verteilknoten: der erste auf dessen Linie mit der geraden Verbindung, der
+zweite rechts darüber, der dritte rechts darunter – ihre Leitungen laufen
+über und unter dem ersten hinweg. Die Wege zu den Wallboxen laufen unter dem
+Fächer durch. Wird es eng (breite Karte, fünf Quellen, Wallboxen), werden die
+Kreise etwas kleiner. Platz für die Wallboxen wird freigehalten, sobald
+welche eingerichtet sind, damit der Fächer nicht springt, wenn ein Auto zu
+laden beginnt.
+
+Jeder Verbraucher trägt den Herkunftsring wie bisher das Haus
+(`house_mix`), seine Leitung und seine Fließpunkte tragen seine eigene Farbe.
+Der erste übernimmt Farbe und Symbol des Hauses. Antippen öffnet den Sensor –
+beim Rest den Hausverbrauch, aus dem er gerechnet ist.
+
+Das ist eine Beta: Rückmeldungen zur Anordnung sind willkommen.
 
 ---
 

@@ -8,7 +8,7 @@
  * https://github.com/thomansky/power-flow-card-plus-mobile
  */
 
-const PPM_VERSION = "1.11.1";
+const PPM_VERSION = "1.12.0-beta.1";
 
 console.info(
   `%c POWER-FLOW-CARD-PLUS-MOBILE %c v${PPM_VERSION} `,
@@ -51,6 +51,16 @@ const QUELL_ICON = [
   "mdi:solar-power", "mdi:solar-power-variant", "mdi:wind-turbine",
   "mdi:engine", "mdi:water-pump",
 ];
+
+/**
+ * Voreinstellungen je Verbraucher. Der erste trägt Farbe und Symbol des
+ * Hauses – ein einzelner Verbraucher sieht so aus wie der Hauskreis, an
+ * dessen Stelle er steht. Die beiden anderen Farben kommen in keinem Fluss
+ * vor (Netz, Speicher, Wallboxen, Autos), damit nichts verwechselt wird.
+ */
+const VERBRAUCHER_NAME = ["Haus", "Verbraucher 2", "Verbraucher 3"];
+const VERBRAUCHER_ICON = ["mdi:home-assistant", "mdi:heat-pump", "mdi:power-socket-de"];
+const VERBRAUCHER_FARBE = ["#3ED96B", "#FFB340", "#FF6FA8"];
 
 /** Ladestandsabhängige Farbe: rot bei leer, grün bei voll. */
 function socColor(soc) {
@@ -249,7 +259,43 @@ const ANFAHRT = 0.028;
  */
 const EINSTICH = 0.015;
 
-function buildNodes(nBat, spalten, autos, nQuellen, aspect) {
+/**
+ * Wo die Verbraucher stehen, wenn es zwei oder drei sind: ein Fächer rechts
+ * vom Verteilknoten, an Stelle des Hauskreises.
+ *
+ * Der erste steht auf der Linie vom Verteilknoten und bekommt die gerade
+ * Verbindung, die vorher das Haus hatte. Der zweite steht rechts darüber,
+ * der dritte rechts darunter; ihre Leitungen laufen über und unter dem
+ * ersten hinweg. Eine gerade Säule bräuchte fast die doppelte Höhe – auf
+ * breiten Flächen mit fünf Quellen und Wallboxen blieben dafür nur Kreise,
+ * deren Schrift niemand mehr liest.
+ *
+ * Nach oben begrenzt die Quellreihe samt ihren Leitungen zur Sammelkugel,
+ * nach unten der Weg zu den Ladespalten. Reicht der Platz nicht, werden die
+ * Kreise kleiner. `oben` und `unten` in Anteilen der Höhe, alles andere in
+ * Anteilen der Breite.
+ */
+function verbraucherFaecher(nV, aspect, yDist, oben, unten) {
+  // Zwischen den Kreisen, und über wie unter dem ersten für die Leitung, die
+  // dort vorbeiläuft (halbe Linienbreite und Luft).
+  const luft = 0.03;
+  const platz = nV >= 3 ? Math.min(yDist - oben, unten - yDist) : yDist - oben;
+  // Höchstens so groß, dass zwischen Verteilknoten und erstem Verbraucher
+  // noch beide geraden Anfahrten Platz haben.
+  const r = Math.max(0.06, Math.min(0.085, (platz / aspect - luft) / 2));
+  const d = r + luft;                       // Abstand der äußeren von der Linie
+  const xR = 0.975 - r;
+  // So weit links, dass er die beiden äußeren nicht berührt.
+  const xB = xR - Math.sqrt(Math.max(0, (2 * r + luft) ** 2 - d ** 2));
+  const knoten = [{ x: xB, y: yDist, r }, { x: xR, y: yDist - d * aspect, r }];
+  if (nV >= 3) knoten.push({ x: xR, y: yDist + d * aspect, r });
+  return {
+    knoten,
+    unterkante: nV >= 3 ? yDist + (d + r) * aspect : yDist + r * aspect,
+  };
+}
+
+function buildNodes(nBat, spalten, autos, nQuellen, aspect, nVerbraucher, ladeGeplant) {
   const reihe = QUELL_REIHE[Math.min(5, nQuellen)] || [];
   const ziele = QUELL_ZIEL[Math.min(5, nQuellen)] || [];
 
@@ -306,6 +352,44 @@ function buildNodes(nBat, spalten, autos, nQuellen, aspect) {
     if (autos[i]) N["car" + (i + 1)] = { x: x(i), y: yCar, r: 0.092 };
   }
 
+  // Verbraucher statt des einen Hauskreises. Einer allein steht genau dort,
+  // wo das Haus stand, und ist so groß wie es.
+  //
+  // Für die Säule wird Platz für die Wallboxen freigehalten, sobald welche
+  // eingerichtet sind – auch wenn gerade keine lädt. Sonst spränge die Säule
+  // jedes Mal, wenn ein Auto anfängt oder aufhört zu laden. Freigehalten wird
+  // für den höchsten Stand der Wallboxen, den mit Auto darunter.
+  let wegY = null;
+  if (nVerbraucher === 1) {
+    N.con1 = { ...N.house };
+    delete N.house;
+  } else if (nVerbraucher >= 2) {
+    delete N.house;
+    // Oben: ab zwei Quellen hängt die Leitung der rechten bis auf die Höhe
+    // der Sammelkugel herunter und läuft dort waagerecht hinein. Darunter
+    // bleiben, samt halber Linienbreite und etwas Luft.
+    const oben = nQuellen <= 1 ? 0.03 : yGen + (0.012 + 0.015) * aspect;
+    // Unten: der Weg zu den Wallboxen samt halber Linienbreite und etwas
+    // Luft, darunter Bogen und gerade Anfahrt bis zum Kreis.
+    const wbOben = yWb - WB_RADIUS * aspect;
+    const unten = ladeGeplant ? wbOben - (ANFAHRT + 0.02 + 0.012 + 0.015) * aspect : 0.97;
+    const s = verbraucherFaecher(Math.min(3, nVerbraucher), aspect, yDist, oben, unten);
+    s.knoten.forEach((k, i) => { N["con" + (i + 1)] = k; });
+
+    // Der Weg zu den Ladespalten läuft waagerecht unter dem Fächer durch.
+    // Liegt die gewohnte Höhe schon darunter, bleibt alles, wie es war.
+    if (spalten > 0) {
+      const tiefste = s.unterkante + (0.012 + 0.015) * aspect;
+      const hoechste = yLade - (WB_RADIUS + ANFAHRT + 0.02) * aspect;
+      const gewohnt = spalten === 2
+        ? (yDist + yLade) / 2
+        : ((yDist + (0.074 + ANFAHRT) * aspect) + (yLade - (WB_RADIUS + ANFAHRT) * aspect)) / 2;
+      if (tiefste > gewohnt) wegY = Math.min(tiefste, hoechste);
+    }
+  }
+  // Nur bei einer Spalte gelesen; bei zweien sitzt die Höhe an der Gabel.
+  N._wegY = spalten === 1 ? wegY : null;
+
   // Zwei Ladespalten hängen an einem gemeinsamen Strang, der sich erst kurz
   // über ihnen gabelt. Zwei getrennte Linien liefen von hier bis dort fast
   // deckungsgleich nebeneinander – das sah nach Fehler aus, nicht nach zwei
@@ -325,7 +409,7 @@ function buildNodes(nBat, spalten, autos, nQuellen, aspect) {
   //
   // Der Punkt wird nie gezeichnet, deshalb Radius null.
   if (spalten === 2) {
-    N.wbGabel = { x: x(0) - WEICHE, y: (yDist + yLade) / 2, r: 0 };
+    N.wbGabel = { x: x(0) - WEICHE, y: wegY != null ? wegY : (yDist + yLade) / 2, r: 0 };
   }
   return N;
 }
@@ -350,10 +434,27 @@ const QUELL_ZIEL = [
    { ta: 325, tx: "v" }, { ta: 0, tx: "h" }],
 ];
 
+/**
+ * Die Wege vom Verteilknoten zu den Verbrauchern.
+ *
+ * Der erste bekommt die gerade Linie, die vorher das Haus hatte. Der zweite
+ * verlässt den Knoten schräg nach oben, steigt bis auf seine Höhe und läuft
+ * waagerecht über den ersten hinweg hinein; der dritte spiegelbildlich unten
+ * herum.
+ */
+function verbraucherWege(N) {
+  const wege = [];
+  if (N.con1) wege.push({ id: "con1", from: "busDist", to: "con1", fa: 0, fx: "h", ta: 180, tx: "h" });
+  if (N.con2) wege.push({ id: "con2", from: "busDist", to: "con2", fa: 315, fx: "v", ta: 180, tx: "h" });
+  if (N.con3) wege.push({ id: "con3", from: "busDist", to: "con3", fa: 45, fx: "v", ta: 180, tx: "h" });
+  return wege;
+}
+
 function buildLinks(N, nQuellen) {
   const zwei = !!N.wb2;
   const ziele = QUELL_ZIEL[Math.min(5, nQuellen)] || [];
   const all = [
+    ...verbraucherWege(N),
     ...ziele.map((z, i) => ({
       id: "src" + (i + 1), from: "src" + (i + 1), to: "busGen",
       fa: 90, fx: "v", ta: z.ta, tx: z.tx,
@@ -373,12 +474,18 @@ function buildLinks(N, nQuellen) {
     // Alle drei enden `stumpf`. Runde Kappen stünden am Abzweig über: die
     // des Strangs über den schmaleren Ästen, und die eines Asts über dem
     // Strang, wenn ein Zähler am Strang weniger meldet als der Ast.
-    { id: "wbStamm", from: "busDist", to: "wbGabel", fa: 60, fx: "v", ta: 180, tx: "h",
+    //
+    // Mit einem dritten Verbraucher geht dessen Leitung bei 45° ab; der
+    // Strang weicht dann nach ganz unten aus, sonst liefen beide dicht
+    // nebeneinander herunter.
+    { id: "wbStamm", from: "busDist", to: "wbGabel", fa: N.con3 ? 90 : 60, fx: "v", ta: 180, tx: "h",
       bogen: WEICHE, frei: "ende", stumpf: true },
     zwei
       ? { id: "wb1", from: "wbGabel", to: "wb1", fa: 180, fx: "h", ta: 270, tx: "v",
           bogen: WEICHE, frei: "anfang", stumpf: true }
-      : { id: "wb1", from: "busDist", to: "wb1", fa: 90, fx: "v", ta: 270, tx: "v" },
+      : { id: "wb1", from: "busDist", to: "wb1", fa: 90, fx: "v", ta: 270, tx: "v",
+          // Unter einer Verbrauchersäule durch statt auf halber Höhe.
+          ...(N._wegY != null ? { my: N._wegY } : {}) },
     { id: "wb2", from: "wbGabel", to: "wb2", fa: 0, fx: "h", ta: 270, tx: "v",
       bogen: WEICHE, frei: "anfang", stumpf: true },
     // Auto hängt senkrecht unter seiner Wallbox.
@@ -602,6 +709,25 @@ class PowerflowPlusMobileCard extends HTMLElement {
       grid: bipolar(config.grid, ["consumption", "import", "from_grid"],
                                  ["production", "export", "to_grid"]),
       house: config.house ?? null,
+      // Bis zu drei Verbraucher statt des einen Hauskreises. Einer darf der
+      // Rest sein: Hausverbrauch minus alle anderen. Zwei Reste ergäben
+      // dieselbe Leistung doppelt – es gilt nur der erste.
+      consumers: (() => {
+        let restVergeben = false;
+        return list(config.consumers).map((v, i) => {
+          const o = norm(v, ["power"]);
+          const p = o.power ?? null;
+          const rest = !!o.rest && !restVergeben;
+          if (rest) restVergeben = true;
+          return {
+            power: rest ? null : Array.isArray(p) ? p.filter(Boolean) : p,
+            name: o.name ?? VERBRAUCHER_NAME[i] ?? `Verbraucher ${i + 1}`,
+            icon: o.icon ?? null,
+            color: o.color ?? null,
+            rest,
+          };
+        });
+      })(),
       // Einspeiselimit: eine Entität in W, kW oder %, oder eine feste Zahl
       // in Watt. Kommt es in Prozent, braucht die Karte die Spitzenleistung
       // der Anlage, um daraus Watt zu machen – sonst bleibt es beim Etikett.
@@ -716,6 +842,9 @@ class PowerflowPlusMobileCard extends HTMLElement {
     if (this._config.batteries.length > 2) {
       throw new Error("Es werden höchstens zwei Batteriespeicher dargestellt.");
     }
+    if (this._config.consumers.length > 3) {
+      throw new Error("Es lassen sich höchstens drei Verbraucher einrichten.");
+    }
     if (this._config.cars.length > 4) {
       throw new Error("Es lassen sich höchstens vier Autos einrichten.");
     }
@@ -743,6 +872,7 @@ class PowerflowPlusMobileCard extends HTMLElement {
     this._watched = [c.house, c.autarky, c.self_consumption,
                      typeof c.grid_limit === "string" ? c.grid_limit : null]
       .concat(c.sources.flatMap((q) => (Array.isArray(q.power) ? q.power : [q.power])))
+      .concat(c.consumers.flatMap((v) => (Array.isArray(v.power) ? v.power : [v.power])))
       .concat(ausBip(c.grid))
       .concat(c.batteries.flatMap((b) => ausBip(b.power).concat([b.soc])))
       .concat(Array.isArray(c.wallbox_total) ? c.wallbox_total : [c.wallbox_total])
@@ -1152,10 +1282,25 @@ class PowerflowPlusMobileCard extends HTMLElement {
     const houseNet =
       house == null ? null : abzug ? Math.max(0, house - abzug) : house;
 
+    // Verbraucher statt des Hauskreises. Ein Rest ist der bereinigte
+    // Hauswert minus alle anderen – nie negativ, und ohne Hauszähler
+    // unbekannt statt 0, damit niemand eine 0 für einen Messwert hält.
+    const consumers = c.consumers.map((x, i) => ({
+      index: i, name: x.name, icon: x.icon, rest: x.rest,
+      power: x.rest ? null : this._sum(x.power),
+    }));
+    const einzeln = consumers.reduce((a, x) => a + (x.rest ? 0 : Math.max(0, z(x.power))), 0);
+    consumers.forEach((x) => {
+      if (x.rest) x.power = houseNet == null ? null : Math.max(0, houseNet - einzeln);
+    });
+
     // Die Autarkie rechnet mit dem, was der Zähler anzeigt – das ist der
     // Verbrauch hinter ihm. Nicht mit dem Durchsatz: sonst zählten
-    // Einspeisung und Speicherladung als „Verbrauch" mit.
-    const consumption = house != null ? house : null;
+    // Einspeisung und Speicherladung als „Verbrauch" mit. Ist gar kein
+    // Hauszähler eingetragen, aber Verbraucher, ist ihre Summe der Verbrauch.
+    // Ist einer eingetragen und nur gerade nicht lesbar, bleibt es leer: die
+    // Summe der übrigen wäre eine Teilmenge, die wie ein Messwert aussähe.
+    const consumption = house != null ? house : !c.house && consumers.length ? einzeln : null;
 
     // Was am Verteilknoten zusammenläuft: alles, was hineinfließt. Die
     // Abflüsse – Haus, Wallboxen, Speicherladung, Einspeisung – müssten
@@ -1217,6 +1362,7 @@ class PowerflowPlusMobileCard extends HTMLElement {
       // Messwert bleibt als houseRaw erhalten.
       house: houseNet,
       houseRaw: house,
+      consumers,
       abzug,
       batteries, wallboxes, cars,
       production, nurAngezeigt,
@@ -1382,7 +1528,7 @@ class PowerflowPlusMobileCard extends HTMLElement {
 
     // Frisch hinzugefügt und noch nichts ausgewählt: sagen, was zu tun ist,
     // statt einen leeren Graph ohne Erklärung stehen zu lassen.
-    if (!c.sources.length && !c.grid && !c.house &&
+    if (!c.sources.length && !c.grid && !c.house && !c.consumers.length &&
         !c.batteries.length && !c.wallboxes.length) {
       box0.innerHTML =
         "<b>Noch nichts eingerichtet.</b><br>Auf <i>Bearbeiten</i> tippen und " +
@@ -1463,6 +1609,20 @@ class PowerflowPlusMobileCard extends HTMLElement {
       if (i === 1) return PAL.ext;
       return toColor(C.quellen[i % C.quellen.length], C.quellen[i % C.quellen.length], this);
     };
+    // Farbe und Symbol je Verbraucher. Der erste trägt, was für das Haus
+    // eingestellt ist – ein einzelner Verbraucher sieht dann aus wie der
+    // Hauskreis, an dessen Stelle er steht.
+    const verbraucherFarbe = (i) => {
+      const x = c.consumers[i] || {};
+      const vorgabe = VERBRAUCHER_FARBE[i % VERBRAUCHER_FARBE.length];
+      if (x.color) return toColor(x.color, vorgabe, this);
+      return i === 0 ? PAL.house : vorgabe;
+    };
+    const verbraucherIcon = (i) => {
+      const x = c.consumers[i] || {};
+      if (x.icon) return x.icon;
+      return i === 0 ? IC.house || VERBRAUCHER_ICON[0] : VERBRAUCHER_ICON[i % VERBRAUCHER_ICON.length];
+    };
     const quellIcon = (i) => {
       const q = c.sources[i] || {};
       if (q.icon) return q.icon;
@@ -1493,7 +1653,9 @@ class PowerflowPlusMobileCard extends HTMLElement {
       aktiv.length,
       aktiv.map((w) => w.carSoc != null),
       c.sources.length,
-      R.w / R.h
+      R.w / R.h,
+      c.consumers.length,
+      c.wallboxes.length > 0
     );
     const L = buildLinks(N, c.sources.length);
     const scale = R.w / 374;
@@ -1528,15 +1690,18 @@ class PowerflowPlusMobileCard extends HTMLElement {
       const sV = RAD(link.from) > 0 ? anchor(link.from, link.fa, vor) : s;
       const eV = RAD(link.to) > 0 ? anchor(link.to, link.ta, vor) : e;
 
+      // Wo ein zweifach geknickter Weg die Richtung wechselt: auf halbem Weg,
+      // außer die Verbindung gibt es vor (`my`, `mx` als Anteil der Fläche) –
+      // etwa um unter den Verbrauchern durchzulaufen oder einander auszuweichen.
       const mitte = (() => {
         if (link.fx === "v" && link.tx === "v") {
           if (Math.abs(sV.x - eV.x) < 1) return [];
-          const my = (sV.y + eV.y) / 2;
+          const my = link.my != null ? R.y + link.my * R.h : (sV.y + eV.y) / 2;
           return [{ x: sV.x, y: my }, { x: eV.x, y: my }];
         }
         if (link.fx === "h" && link.tx === "h") {
           if (Math.abs(sV.y - eV.y) < 1) return [];
-          const mx = (sV.x + eV.x) / 2;
+          const mx = link.mx != null ? R.x + link.mx * R.w : (sV.x + eV.x) / 2;
           return [{ x: mx, y: sV.y }, { x: mx, y: eV.y }];
         }
         if (link.fx === "v") return [{ x: sV.x, y: eV.y }];
@@ -1653,6 +1818,7 @@ class PowerflowPlusMobileCard extends HTMLElement {
     });
     put("bus", v.production, PAL.bus);
     put("house", Math.max(0, z(v.house)), PAL.house);
+    v.consumers.forEach((x, i) => put("con" + (i + 1), Math.max(0, z(x.power)), verbraucherFarbe(i)));
     put("grid", Math.abs(z(v.grid)), z(v.grid) > 0 ? PAL.gridIn : PAL.grid, z(v.grid) < 0);
     v.batteries.forEach((b, i) => {
       put(`bat${i + 1}`, Math.abs(z(b.power)), this._batColor(b.soc, b.power), z(b.power) > 0);
@@ -1709,6 +1875,7 @@ class PowerflowPlusMobileCard extends HTMLElement {
     const mischungFuer = (link, st) => {
       if (link.id === "bus") return quellMischung;
       if (link.id === "house" || link.id === "wbStamm") return mischung;
+      if (/^con\d$/.test(link.id)) return mischung;
       if (/^(wb|car)\d$/.test(link.id)) return mischung;
       // Speicher und Netz nur in der Richtung, in der sie Abnehmer sind.
       if (/^bat\d$/.test(link.id) && st.reversed) return mischung;
@@ -2101,6 +2268,20 @@ class PowerflowPlusMobileCard extends HTMLElement {
       ringSegments: hausRing,
     });
 
+    // Die Verbraucher bekommen denselben Herkunftsring wie das Haus. Ein
+    // Rest zeigt beim Antippen den Hauszähler – aus dem er gerechnet ist.
+    v.consumers.forEach((x, i) => {
+      const key = "con" + (i + 1);
+      if (!N[key]) return;
+      drawNode(key, {
+        icon: "house", mdi: verbraucherIcon(i), title: x.name, value: fmtPower(x.power),
+        tint: verbraucherFarbe(i), active: z(x.power) > T,
+        entity: c.consumers[i].rest ? c.house : erste(c.consumers[i].power),
+        ringSegments: c.house_mix && z(x.power) > T ? mischung : null,
+        compact: N[key].r < 0.11,
+      });
+    });
+
     v.batteries.forEach((b, i) => {
       drawNode(`battery${i + 1}`, {
         icon: "battery", mdi: c.batteries[i].icon, title: b.name, value: fmtPower(b.power), detail: fmtSoc(b.soc),
@@ -2255,6 +2436,7 @@ const LABELS = {
   color: "Farbe",
   invert: "Vorzeichen umdrehen",
   display_only: "Nur anzeigen, nicht in die Summe rechnen",
+  rest: "Rest vom Hausverbrauch",
   power_sources: "Leistung",
   icon_grid: "Symbol Netz",
   icon_house: "Symbol Zuhause",
@@ -2294,6 +2476,15 @@ const HELFER = {
     "Anschalten, wenn der Sensor die Erzeugung negativ meldet. Zieht die " +
     "Quelle im Bereitschaftsbetrieb, bleibt der Wert danach negativ – die " +
     "Karte zeigt ihn dann und dreht die Flussrichtung um.",
+  rest:
+    "Statt eines eigenen Sensors: Hausverbrauch minus alle anderen " +
+    "Verbraucher – etwa der Hausverbrauch der Anlage ohne Wärmepumpe und " +
+    "Werkstatt. Braucht den Hausverbrauch unter „Zuhause“. Nur einer kann der " +
+    "Rest sein.",
+  house:
+    "Sind unter „Verbraucher“ einzelne Kreise eingerichtet, ersetzen sie den " +
+    "Hauskreis. Dieser Wert gilt dann als Gesamtverbrauch – für die Autarkie " +
+    "und für einen Verbraucher, der der Rest ist.",
   display_only:
     "Für Erzeuger, die an der Anlage vorbei angeschlossen sind – ein " +
     "Balkonkraftwerk an der Steckdose etwa. Die Kugel zeigt den Wert weiter, " +
@@ -2557,6 +2748,7 @@ const SEITEN = [
   { id: "sources",   label: "Erzeugung",     icon: "mdi:solar-power", liste: true },
   { id: "grid",      label: "Netz",          icon: "mdi:transmission-tower" },
   { id: "house",     label: "Zuhause",       icon: "mdi:home" },
+  { id: "consumers", label: "Verbraucher",   icon: "mdi:power-plug-outline", liste: true },
   { id: "batteries", label: "Speicher",      icon: "mdi:battery-high", liste: true },
   { id: "wallboxes", label: "Wallboxen",     icon: "mdi:ev-station",   liste: true },
   { id: "cars",      label: "Autos",         icon: "mdi:car-electric", liste: true },
@@ -2702,6 +2894,37 @@ const KIND = {
       { name: "color", selector: SEL_COLOR },
       { name: "invert", selector: { boolean: {} } },
       { name: "display_only", selector: { boolean: {} } },
+    ],
+  },
+
+  consumers: {
+    label: "Verbraucher", max: 3,
+    toForm: (x) => ({
+      name: x.name, icon: x.icon, color: x.color,
+      power_sources: alsListe(x.power),
+      rest: !!x.rest,
+    }),
+    fromForm: (d) =>
+      clean({
+        name: d.name,
+        icon: d.icon,
+        color: d.color,
+        // Mehrere Sensoren werden addiert; einer bleibt ein einfacher Wert.
+        // Ein Rest braucht keinen – er wird gerechnet.
+        power: d.rest || !d.power_sources || !d.power_sources.length
+          ? undefined
+          : d.power_sources.length === 1 ? d.power_sources[0] : d.power_sources,
+        // false ist die Vorgabe und muss nicht in der Konfiguration stehen.
+        rest: d.rest ? true : undefined,
+      }),
+    schema: () => [
+      { type: "grid", name: "", schema: [
+        { name: "name", selector: SEL_TEXT },
+        { name: "icon", selector: SEL_ICON },
+      ] },
+      { name: "power_sources", selector: { entity: { ...SEL_ENTITY.entity, multiple: true } } },
+      { name: "rest", selector: { boolean: {} } },
+      { name: "color", selector: SEL_COLOR },
     ],
   },
 
@@ -3015,6 +3238,12 @@ class PowerflowPlusMobileEditor extends HTMLElement {
         return liste.length + " von 5" + (abseits ? ", " + abseits + " nur angezeigt" : "");
       }
       case "house": return kurz(c.house);
+      case "consumers": {
+        const liste = alsListe(c.consumers);
+        if (!liste.length) return "keine – ein Hauskreis";
+        const rest = liste.some((x) => x && x.rest);
+        return liste.length + " von 3" + (rest ? ", einer als Rest" : "");
+      }
       case "grid": return istPaar(c.grid) ? "zwei Sensoren" : kurz(c.grid);
       case "batteries": {
         const n = (c.batteries || []).length;
@@ -3114,7 +3343,19 @@ class PowerflowPlusMobileEditor extends HTMLElement {
   _eintraege(art) {
     const roh = art === "sources" ? quellenAus(this._config) : alsListe(this._config[art]);
     const schluessel = art === "cars" ? "soc" : "power";
-    return roh.map((x) => (typeof x === "string" ? { [schluessel]: x } : x || {}));
+    const eintraege = roh.map((x) => (typeof x === "string" ? { [schluessel]: x } : x || {}));
+    if (art !== "consumers") return eintraege;
+    // Bei den Verbrauchern zählt nur der erste Rest – so rechnet auch die
+    // Karte. Ein zweiter, in YAML eingetragen, stünde sonst im Editor als
+    // Rest da, und die erste Eingabe in seiner Zeile würfe seinen Sensor weg.
+    let vergeben = false;
+    return eintraege.map((x) => {
+      if (!x.rest) return x;
+      if (!vergeben) { vergeben = true; return x; }
+      const ohne = { ...x };
+      delete ohne.rest;
+      return ohne;
+    });
   }
 
   _zeigeListe(seite) {
@@ -3237,8 +3478,20 @@ class PowerflowPlusMobileEditor extends HTMLElement {
         this._render();
         return;
       }
-      const liste = [...this._eintraege(art)];
+      let liste = [...this._eintraege(art)];
       liste[i] = k.fromForm(neu);
+      // Rest wie ein Optionsfeld: wird er hier angeschaltet, verliert ihn der
+      // bisherige. Dessen Zeile muss das sofort zeigen – also neu zeichnen.
+      let restGewandert = false;
+      if (art === "consumers" && liste[i].rest) {
+        liste = liste.map((x, j) => {
+          if (j === i || !x.rest) return x;
+          restGewandert = true;
+          const ohne = { ...x };
+          delete ohne.rest;
+          return ohne;
+        });
+      }
       // Beim Tippen wird bewusst nicht neu gezeichnet, sonst verlöre das Feld
       // den Eingabefokus. Die Kopfzeile bliebe dann aber auf dem alten Namen
       // stehen – also wird sie hier von Hand nachgezogen.
@@ -3251,7 +3504,7 @@ class PowerflowPlusMobileEditor extends HTMLElement {
       const stand = art === "sources"
         ? mitQuellen(this._config, liste)
         : { ...this._config, [art]: liste };
-      this._fire(art === "cars" ? ohneAltesAuto(stand, liste[i]) : stand);
+      this._fire(art === "cars" ? ohneAltesAuto(stand, liste[i]) : stand, restGewandert);
     });
     inhalt.appendChild(form);
 
@@ -3306,6 +3559,7 @@ class PowerflowPlusMobileEditor extends HTMLElement {
     if (art === "batteries") {
       return istPaar(item.power) ? "getrennt" : item.power ? "ein Sensor" : "–";
     }
+    if (art === "consumers" && item.rest) return "Rest vom Haus";
     const n = alsListe(item.power).length;
     return (n ? n + " Sensor" + (n > 1 ? "en" : "") : "–") + (item.car ? " · Auto" : "");
   }
