@@ -15,7 +15,7 @@ Dann im Browser:
 
 | Seite | Prüft |
 |---|---|
-| `test/linien.html` | Länge, Punktraster, Abstände, Gabel, radiale Anfahrt der Verbindungen |
+| `test/linien.html` | Länge, Punktraster, Abstände, radiale Anfahrt; die Weiche mit Bögen, stumpfen Enden und gerasterter Helligkeit am Abzweig |
 | `test/quellen.html` | ein bis fünf Quellen, alte Schreibweise, Vorzeichen, Antippen |
 | `test/autos.html` | Zuordnung Auto ↔ Wallbox: fest, Stecker, Leistung, Eindeutigkeit |
 | `test/kacheln.html` | Autarkie, Eigenverbrauch, Bilanz, helle Darstellung, Fließpunkte, Hilfetexte |

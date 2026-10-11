@@ -8,7 +8,7 @@
  * https://github.com/thomansky/power-flow-card-plus-mobile
  */
 
-const PPM_VERSION = "1.11.0";
+const PPM_VERSION = "1.11.1";
 
 console.info(
   `%c POWER-FLOW-CARD-PLUS-MOBILE %c v${PPM_VERSION} `,
@@ -219,11 +219,20 @@ const QUELL_REIHE = [
 const LUFT = 0.045;
 
 /**
- * Vorlauf des Abzweigs zur linken Ladespalte, als Anteil der Breite. Genau
- * doppelt so lang wie der Eckenradius (0,045 · Breite), den roundedPath auf
- * die halbe Segmentlänge kappt – so kommt der Bogen auf seinen vollen Radius.
+ * Radius der Bögen an der Weiche zu den Ladespalten, als Anteil der Breite –
+ * größer als die übrigen Ecken (0,045), damit Strang und Äste wie gezogen
+ * aussehen statt geknickt.
+ *
+ * Zugleich der Abstand des Abzweigs vor der linken Spalte: genau dort beginnt
+ * ihr Bogen. Vorher lag der Abzweig doppelt so weit davor, und beide Äste
+ * liefen ein Stück übereinander – zwei halbdurchsichtige Schichten auf einem
+ * Weg, mit einem Fleck dort, wo sie begannen. Jetzt biegt der linke Ast am
+ * Abzweig sofort ab, und der rechte läuft gerade weiter.
+ *
+ * Nach oben begrenzt durch den Platz zwischen Strang und linker Spalte: die
+ * Ecke des Strangs und der Bogen des Asts teilen sich gut 0,12 der Breite.
  */
-const WEICHE = 0.09;
+const WEICHE = 0.06;
 
 /**
  * Wie weit vor dem Kreis die Linie auf die Radiale einschwenkt, als Anteil
@@ -231,6 +240,14 @@ const WEICHE = 0.09;
  * genug, dass die Kappe am Ende sauber im Rand steckt.
  */
 const ANFAHRT = 0.028;
+
+/**
+ * Wie weit eine stumpf endende Linie in ihren Kreis hineinragt, als Anteil
+ * der Breite. Ohne Kappe endete sie sonst genau am Rand, und zwischen Linie
+ * und Kugel bliebe eine Haarfuge. Länger als die halbe dickste Linie (9 px
+ * bei 374 px Breite); die Kugel verdeckt das Stück.
+ */
+const EINSTICH = 0.015;
 
 function buildNodes(nBat, spalten, autos, nQuellen, aspect) {
   const reihe = QUELL_REIHE[Math.min(5, nQuellen)] || [];
@@ -300,12 +317,11 @@ function buildNodes(nBat, spalten, autos, nQuellen, aspect) {
   // rechts durch, lässt unterwegs die linke Spalte ab und endet an der
   // rechten – eine Linie mit einem Abzweig statt einer Gabel mit Rückweg.
   //
-  // Der Punkt liegt ein Stück **vor** der linken Spalte, nicht genau darüber.
-  // Säße er darüber, knickte der Ast im rechten Winkel ab; so bekommt er
-  // einen Vorlauf, aus dem roundedPath einen Bogen macht – die beiden Äste
-  // laufen ein Stück gemeinsam und trennen sich dann, wie bei einer Weiche.
-  // Der Vorlauf ist doppelt so lang wie der Eckenradius, damit der Bogen
-  // seinen vollen Radius bekommt und nicht auf die halbe Strecke gekappt wird.
+  // Der Punkt liegt einen Bogenradius **vor** der linken Spalte, nicht genau
+  // darüber. Säße er darüber, knickte der Ast im rechten Winkel ab; so
+  // beginnt der Bogen am Abzweig selbst. Der Strang läuft in einem S zur
+  // linken Spalte, der rechte Ast geht dort tangential geradeaus weiter –
+  // wie bei einer Weiche, ohne gemeinsames Stück.
   //
   // Der Punkt wird nie gezeichnet, deshalb Radius null.
   if (spalten === 2) {
@@ -349,11 +365,22 @@ function buildLinks(N, nQuellen) {
     { id: "bat2", from: "battery2", to: "busDist", fa: 0, fx: "h", ta: 120, tx: "v" },
     // Bei zwei Spalten führt ein Strang vom Verteilknoten herunter und gabelt
     // sich erst über den Wallboxen. Bei einer geht es senkrecht durch.
-    { id: "wbStamm", from: "busDist", to: "wbGabel", fa: 60, fx: "v", ta: 180, tx: "h" },
+    //
+    // An der Weiche gilt der größere Bogen. `frei` nennt das Ende, das am
+    // Abzweig liegt: dort sitzt keine weitere Ecke, also darf der Bogen das
+    // Stück dorthin ganz nutzen statt nur die Hälfte.
+    //
+    // Alle drei enden `stumpf`. Runde Kappen stünden am Abzweig über: die
+    // des Strangs über den schmaleren Ästen, und die eines Asts über dem
+    // Strang, wenn ein Zähler am Strang weniger meldet als der Ast.
+    { id: "wbStamm", from: "busDist", to: "wbGabel", fa: 60, fx: "v", ta: 180, tx: "h",
+      bogen: WEICHE, frei: "ende", stumpf: true },
     zwei
-      ? { id: "wb1", from: "wbGabel", to: "wb1", fa: 180, fx: "h", ta: 270, tx: "v" }
+      ? { id: "wb1", from: "wbGabel", to: "wb1", fa: 180, fx: "h", ta: 270, tx: "v",
+          bogen: WEICHE, frei: "anfang", stumpf: true }
       : { id: "wb1", from: "busDist", to: "wb1", fa: 90, fx: "v", ta: 270, tx: "v" },
-    { id: "wb2", from: "wbGabel", to: "wb2", fa: 0, fx: "h", ta: 270, tx: "v" },
+    { id: "wb2", from: "wbGabel", to: "wb2", fa: 0, fx: "h", ta: 270, tx: "v",
+      bogen: WEICHE, frei: "anfang", stumpf: true },
     // Auto hängt senkrecht unter seiner Wallbox.
     { id: "car1", from: "wb1", to: "car1", fa: 90, fx: "v", ta: 270, tx: "v" },
     { id: "car2", from: "wb2", to: "car2", fa: 90, fx: "v", ta: 270, tx: "v" },
@@ -1516,10 +1543,25 @@ class PowerflowPlusMobileCard extends HTMLElement {
         return [{ x: eV.x, y: sV.y }];
       })();
 
+      // Eine stumpfe Bahn hat keine Kappe. An einem Kreis ragt sie deshalb
+      // ein Stück hinein, wo die Kugel sie verdeckt (EINSTICH).
+      const stumpf = link.stumpf;
+      const innenA = stumpf && RAD(link.from) > 0 ? anchor(link.from, link.fa, -R.w * EINSTICH) : null;
+      const innenE = stumpf && RAD(link.to) > 0 ? anchor(link.to, link.ta, -R.w * EINSTICH) : null;
+
       // Punkte, die aufeinanderfallen, würden nur leere Segmente erzeugen.
-      const roh = [s, sV, ...mitte, eV, e];
-      return roh.filter((p, i) =>
+      const roh = [innenA, s, sV, ...mitte, eV, e, innenE].filter(Boolean);
+      const pts = roh.filter((p, i) =>
         i === 0 || Math.hypot(p.x - roh[i - 1].x, p.y - roh[i - 1].y) > 0.5);
+
+      // Am Abzweig beginnt ein stumpfer Ast einen Pixel im Strang. Stießen
+      // die beiden Flächen nur Kante an Kante, zeichnete die Kantenglättung
+      // genau dort eine feine dunklere Fuge – beide deckten das Pixel halb.
+      if (stumpf && RAD(link.from) === 0 && pts.length > 1) {
+        const l = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
+        pts.unshift({ x: pts[0].x - (pts[1].x - pts[0].x) / l, y: pts[0].y - (pts[1].y - pts[0].y) / l });
+      }
+      return pts;
     };
 
     const roundedPath = (pts, radius) => {
@@ -1536,6 +1578,62 @@ class PowerflowPlusMobileCard extends HTMLElement {
         d += ` L ${a.x} ${a.y} Q ${p1.x} ${p1.y} ${b.x} ${b.y}`;
       }
       const last = pts[pts.length - 1];
+      return `${d} L ${last.x} ${last.y}`;
+    };
+
+    /**
+     * Rundung für die Weiche zu den Ladespalten, wo der Platz knapp ist –
+     * auf breiten Flächen bleibt zwischen Abzweig und Wallbox wenig Höhe.
+     * roundedPath teilt jedes Stück stur hälftig zwischen seinen beiden
+     * Ecken; hier wird genauer gerechnet:
+     *
+     * - Ein Punkt auf einer Geraden ist keine Ecke und bekommt nichts. Sonst
+     *   nähme die gerade Anfahrt in die Wallbox dem Bogen davor die Hälfte.
+     * - Jede Ecke nimmt vom Stück davor, was die vorige übrig ließ.
+     * - Am Kreis bleibt die Anfahrt gerade (höchstens die halbe Strecke), am
+     *   Abzweig – dem Ende, das `frei` nennt – gar nichts: dort sitzt keine
+     *   Ecke, an die etwas abzugeben wäre.
+     */
+    const weichenPfad = (pts, radius, frei) => {
+      const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+      const lerp = (a, b, t) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+      // Gerade Zwischenpunkte herausnehmen, bis keiner mehr übrig ist.
+      let p = pts.slice();
+      for (let weg = true; weg;) {
+        weg = false;
+        for (let i = 1; i < p.length - 1; i++) {
+          const a = p[i - 1], q = p[i], b = p[i + 1];
+          const l1 = dist(a, q), l2 = dist(q, b);
+          const kreuz = (q.x - a.x) * (b.y - q.y) - (q.y - a.y) * (b.x - q.x);
+          const skalar = (q.x - a.x) * (b.x - q.x) + (q.y - a.y) * (b.y - q.y);
+          if (l1 < 0.5 || l2 < 0.5 || (Math.abs(kreuz) < 0.01 * l1 * l2 && skalar > 0)) {
+            p.splice(i, 1);
+            weg = true;
+            break;
+          }
+        }
+      }
+      if (p.length < 2) return "";
+      const n = p.length;
+      const stueck = (i) => dist(p[i], p[i + 1]);
+      // Die Bahnen der Weiche ragen stumpf in ihre Kreise; der gerade Teil
+      // zählt deshalb ab der Spitze im Kreis.
+      const gerade = R.w * (ANFAHRT + EINSTICH);
+      // Was das erste und das letzte Stück für ihre Ecke hergeben.
+      const anfang = frei === "anfang" ? stueck(0) : stueck(0) - Math.min(stueck(0) / 2, gerade);
+      const ende = frei === "ende" ? stueck(n - 2) : stueck(n - 2) - Math.min(stueck(n - 2) / 2, gerade);
+      let d = `M ${p[0].x} ${p[0].y}`;
+      let vorige = 0;
+      for (let i = 1; i < n - 1; i++) {
+        const vorn = i === 1 ? anfang : stueck(i - 1) - vorige;
+        const hinten = i === n - 2 ? ende : stueck(i) / 2;
+        const r = Math.max(0, Math.min(radius, vorn, hinten));
+        const a = lerp(p[i], p[i - 1], r / stueck(i - 1));
+        const b = lerp(p[i], p[i + 1], r / stueck(i));
+        d += ` L ${a.x} ${a.y} Q ${p[i].x} ${p[i].y} ${b.x} ${b.y}`;
+        vorige = r;
+      }
+      const last = p[n - 1];
       return `${d} L ${last.x} ${last.y}`;
     };
 
@@ -1639,16 +1737,28 @@ class PowerflowPlusMobileCard extends HTMLElement {
     };
 
     // ---------------------------------------------------------- Linien
+    // Strang und Äste der Weiche berühren sich am Abzweig, und dort, wo der
+    // linke Ast abbiegt, liegen sie ein Stück übereinander. Jede Bahn für sich
+    // halbdurchsichtig, deckten sich an diesen Stellen zwei oder drei
+    // Schichten – am Abzweig stand ein dunkler Fleck. In einer gemeinsamen
+    // Gruppe gilt die Durchsichtigkeit einmal für alle zusammen; was sich
+    // überlappt, wird nicht dichter.
+    const istWeiche = (link) => link.id === "wbStamm" || link.from === "wbGabel";
+    let weichenGruppe = null;
+
     L.forEach((link) => {
       const st = states[link.id];
       if (!st) return;
-      const dPath = roundedPath(waypoints(link), R.w * 0.045);
+      const dPath = link.bogen
+        ? weichenPfad(waypoints(link), R.w * link.bogen, link.frei)
+        : roundedPath(waypoints(link), R.w * 0.045);
 
       // Die Länge wird am fertigen Pfad gemessen, nicht nachgerechnet. Eine
       // eigene Rechnung müsste jede Eckenform kennen – seit die Linien radial
       // in die Kreise laufen, sind die Ecken nicht mehr alle rechtwinklig.
       // Dafür wird die Bahn erst angelegt und dann beschriftet.
-      const bahn = el("path", { d: dPath, fill: "none", "stroke-linecap": "round" });
+      const bahn = el("path", { d: dPath, fill: "none",
+        "stroke-linecap": link.stumpf ? "butt" : "round" });
       svg.appendChild(bahn);
       const laenge = bahn.getTotalLength();
 
@@ -1679,8 +1789,25 @@ class PowerflowPlusMobileCard extends HTMLElement {
           ))
         : 1.6;
 
+      // Die Gruppe sitzt dort, wo die erste Bahn der Weiche lag – also unter
+      // deren Punkten. Spätere Bahnen wandern hinein und liegen damit ebenfalls
+      // unter allen Punkten.
+      //
+      // Der rechte Ast kommt in der Gruppe nach unten. Strang und linker Ast
+      // tragen dieselbe Farbe und bilden zusammen das S; der rechte Ast tritt
+      // am Abzweig darunter hervor, statt mit seiner runden Kappe obenauf im
+      // Strang zu sitzen.
+      const inGruppe = active && istWeiche(link);
+      if (inGruppe) {
+        if (!weichenGruppe) {
+          weichenGruppe = el("g", { opacity: 0.35, class: "weiche" });
+          svg.insertBefore(weichenGruppe, bahn);
+        }
+        if (link.id === "wb2") weichenGruppe.insertBefore(bahn, weichenGruppe.firstChild);
+        else weichenGruppe.appendChild(bahn);
+      }
       bahn.setAttribute("stroke", active ? st.color : "rgba(255,255,255,.12)");
-      bahn.setAttribute("stroke-opacity", active ? 0.35 : 1);
+      bahn.setAttribute("stroke-opacity", active && !inGruppe ? 0.35 : 1);
       bahn.setAttribute("stroke-width", active ? lw : 1.6);
       if (!active || !c.animate) return;
 

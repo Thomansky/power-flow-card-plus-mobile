@@ -5,6 +5,29 @@ die Versionsnummern [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unveröffentlicht]
 
+## [1.11.1] – 2026-10-11
+
+### Geändert
+
+* **Die Weiche zu zwei ladenden Wallboxen ist überarbeitet.** Die Bögen sind
+  größer, und der Strang läuft jetzt in einem S zur linken Wallbox, während
+  der rechte Ast am Abzweig gerade weitergeht. Vorher lief der Strang mit
+  einer gestauchten Ecke (gut ein Drittel des üblichen Radius) auf den
+  Abzweig zu, und beide Äste liefen danach ein Stück übereinander.
+
+### Behoben
+
+* **Der Fleck am Abzweig ist weg.** Dort trafen das Ende des Strangs und die
+  Anfänge beider Äste mit runden Kappen aufeinander – drei halbdurchsichtige
+  Schichten übereinander, die dichter deckten als eine. Strang und Äste liegen
+  jetzt in einer gemeinsamen Gruppe, deren Durchsichtigkeit für alle zusammen
+  gilt, und enden stumpf. Die Äste setzen einen Pixel im Strang an, damit an
+  der Stoßstelle keine Fuge entsteht.
+* Meldet ein Zähler am Strang (`wallbox_total`) weniger als der stärkere Ast,
+  ist der Strang schmaler als der Ast. Dessen runde Kappe stand dann als
+  Knubbel über das Strangende hinaus; jetzt schließt er mit einer glatten
+  Stufe an.
+
 ## [1.11.0] – 2026-10-01
 
 ### Neu
@@ -500,7 +523,8 @@ Erste Veröffentlichung.
   hohe, schmale Flächen ausgelegt.
 * Reine Anzeige, es lässt sich nichts steuern.
 
-[Unveröffentlicht]: https://github.com/thomansky/power-flow-card-plus-mobile/compare/v1.11.0...HEAD
+[Unveröffentlicht]: https://github.com/thomansky/power-flow-card-plus-mobile/compare/v1.11.1...HEAD
+[1.11.1]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.11.1
 [1.11.0]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.11.0
 [1.10.0]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.10.0
 [1.9.0]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.9.0

@@ -145,6 +145,145 @@ const engsteNaehe = (svg) => {
     box.remove();
   }
 
+  // --- Die Weiche -----------------------------------------------------------
+  // Größere Bögen, kein gemeinsames Stück der beiden Äste, und am Abzweig
+  // kein Fleck aus übereinanderliegenden halbdurchsichtigen Schichten.
+  const ohneFluss = (w, h) => karte({ sources: [{ power: "sensor.q1" }], house: "sensor.haus",
+    grid: "sensor.netz", animate: false, wallboxes: [
+      { power: "sensor.wb", name: "WB1", car: "sensor.car" },
+      { power: "sensor.wb2", name: "WB2", car: "sensor.car2" }] }, S, w, h);
+  const radien = (d) => [...d.matchAll(/L ([\d.-]+) ([\d.-]+) Q ([\d.-]+) ([\d.-]+) ([\d.-]+) ([\d.-]+)/g)]
+    .map((m) => Math.hypot(+m[3] - +m[1], +m[4] - +m[2]));
+  const startVon = (p) => { const q = p.getPointAtLength(0); return [q.x, q.y]; };
+  const endeVon = (p) => { const q = p.getPointAtLength(p.getTotalLength()); return [q.x, q.y]; };
+  // Strang: die Bahn, an deren Ende zwei andere beginnen (die Äste setzen
+  // einen Pixel im Strang an).
+  const weiche = (svg) => {
+    const alle = bahnen(svg);
+    const dran = (p, q) => Math.hypot(startVon(q)[0] - endeVon(p)[0], startVon(q)[1] - endeVon(p)[1]) < 2;
+    const stamm = alle.find((p) => alle.filter((q) => q !== p && dran(p, q)).length === 2);
+    return { stamm, aeste: stamm ? alle.filter((q) => q !== stamm && dran(stamm, q)) : [] };
+  };
+  // Das Bild rastern, um Helligkeiten zu messen – so, wie es jemand sieht.
+  const raster = async (svg) => {
+    const vb = svg.getAttribute("viewBox").split(" ").map(Number);
+    const bild = await new Promise((fertigBild) => {
+      const kopie = svg.cloneNode(true);
+      kopie.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+      kopie.setAttribute("width", vb[2] * 2);
+      kopie.setAttribute("height", vb[3] * 2);
+      const img = new Image();
+      img.onload = () => fertigBild(img);
+      img.onerror = () => fertigBild(null);
+      img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(new XMLSerializer().serializeToString(kopie));
+    });
+    if (!bild) return null;
+    const cv = document.createElement("canvas");
+    cv.width = vb[2] * 2; cv.height = vb[3] * 2;
+    const ctx = cv.getContext("2d");
+    ctx.fillStyle = "#0B0E13"; ctx.fillRect(0, 0, cv.width, cv.height);
+    ctx.drawImage(bild, 0, 0);
+    return (x, y) => {
+      const d = ctx.getImageData(Math.round(x * 2), Math.round(y * 2), 1, 1).data;
+      return (d[0] * 299 + d[1] * 587 + d[2] * 114) / 1000;
+    };
+  };
+  {
+    const { svg, box } = ohneFluss(390, 700);
+    const W = Math.min(390, 700 * 0.78);
+    const { stamm, aeste } = weiche(svg);
+    ok("Weiche: Strang und zwei Äste gefunden", !!stamm && aeste.length === 2, true);
+    if (stamm && aeste.length === 2) {
+      const [links, rechts] = aeste.sort((a, b) => endeVon(a)[0] - endeVon(b)[0]);
+      const soll = 0.06 * W;
+      nah("Weiche: Strang biegt mit dem großen Radius", Math.max(...radien(stamm.getAttribute("d"))), soll, 1);
+      nah("Weiche: linker Ast biegt mit dem großen Radius", Math.max(...radien(links.getAttribute("d"))), soll, 1);
+      nah("Weiche: rechter Ast biegt mit dem großen Radius", Math.max(...radien(rechts.getAttribute("d"))), soll, 1);
+      // Kein gemeinsames Stück: gemessen wird, wie weit die beiden Äste nach
+      // dem Abzweig noch aufeinanderliegen (weniger als 0,25 px Abstand).
+      // Mit Vorlauf waren das gut 40 px; jetzt nur der eine Pixel Ansatz im
+      // Strang und der flache Beginn des Bogens.
+      let gemeinsam = 0;
+      while (gemeinsam < 60) {
+        const a = links.getPointAtLength(gemeinsam), b = rechts.getPointAtLength(gemeinsam);
+        if (Math.hypot(a.x - b.x, a.y - b.y) > 0.25) break;
+        gemeinsam += 0.5;
+      }
+      ok("Weiche: der linke Ast biegt sofort ab (gemeinsam unter 10 px)", gemeinsam < 10, true);
+      ok("Weiche: der Abzweig liegt einen Radius vor der linken Spalte",
+        Math.abs(endeVon(links)[0] - endeVon(stamm)[0] - soll) < 1, true);
+      ok("Weiche: alle drei enden stumpf",
+        [stamm, links, rechts].every((p) => p.getAttribute("stroke-linecap") === "butt"), true);
+      // Stumpf heißt: an den Kugeln ein Stück hinein, damit keine Fuge bleibt.
+      const kugeln = [...svg.querySelectorAll("circle")]
+        .map((c) => ({ x: +c.getAttribute("cx"), y: +c.getAttribute("cy"), r: +c.getAttribute("r") }))
+        .filter((c) => c.r > 5);
+      const drin = (pt) => kugeln.some((c) => Math.hypot(pt[0] - c.x, pt[1] - c.y) < c.r - 2);
+      ok("Weiche: der Strang beginnt in der Kugel", drin(startVon(stamm)), true);
+      ok("Weiche: die Äste enden in ihren Kugeln", drin(endeVon(links)) && drin(endeVon(rechts)), true);
+      const g = svg.querySelector("g.weiche");
+      ok("Weiche: eine Gruppe, halbdurchsichtig als Ganzes", g && g.getAttribute("opacity"), "0.35");
+      ok("Weiche: darin alle drei, jede für sich deckend",
+        g ? [...g.querySelectorAll("path")].filter((p) => p.getAttribute("stroke-opacity") === "1").length : 0, 3);
+      ok("Weiche: der rechte Ast liegt zuunterst", g && g.firstElementChild === rechts, true);
+
+      // Der Fleck selbst: das Bild rastern und am Abzweig die Helligkeit mit
+      // der im Strang kurz davor vergleichen. Drei halbdurchsichtige
+      // Schichten übereinander waren dort deutlich heller als eine.
+      const hell = await raster(svg);
+      ok("Weiche: das Bild lässt sich rastern", !!hell, true);
+      if (hell) {
+        const L = stamm.getTotalLength();
+        const vorher = stamm.getPointAtLength(L - 10);
+        const P = endeVon(stamm);
+        const grund = hell(vorher.x, vorher.y);
+        const proben = [-3, -1.5, -0.5, 0, 0.5, 1.5, 4].map((dx) => hell(P[0] + dx, P[1]));
+        ok("Weiche: der Strang ist sichtbar", grund > 30, true);
+        ok("Weiche: am Abzweig kein hellerer Fleck", Math.max(...proben) - grund < 8, true);
+        ok("Weiche: am Abzweig keine dunklere Fuge", grund - Math.min(...proben) < 8, true);
+      }
+    }
+    box.remove();
+  }
+  // Meldet ein Zähler am Strang weniger als der stärkere Ast, ist der Strang
+  // schmaler. Eine runde Kappe des Asts stand dann als Knubbel über dem
+  // Strangende hinaus.
+  {
+    const s = { ...S, "sensor.kreis": zustand("sensor.kreis", 1500, "W") };
+    const { svg, box } = karte({ sources: [{ power: "sensor.q1" }], house: "sensor.haus", grid: "sensor.netz",
+      animate: false, wallbox_total: "sensor.kreis", wallboxes: [
+        { power: "sensor.wb", car: "sensor.car" }, { power: "sensor.wb2", car: "sensor.car2" }] }, s, 390, 700);
+    const { stamm, aeste } = weiche(svg);
+    const hell = stamm ? await raster(svg) : null;
+    if (stamm && hell) {
+      const P = endeVon(stamm);
+      const breitester = Math.max(...aeste.map((p) => +p.getAttribute("stroke-width")));
+      const schmal = +stamm.getAttribute("stroke-width");
+      ok("Zähler kleiner: der Strang ist schmaler als der Ast", schmal < breitester - 1, true);
+      // Knapp vor dem Abzweig, außerhalb des Strangs, aber innerhalb der
+      // halben Astbreite: dort muss Hintergrund sein.
+      const y = P[1] - (schmal / 2 + breitester / 2) / 2;
+      ok("Zähler kleiner: kein Knubbel am Abzweig", hell(P[0] - 2.5, y) < 20, true);
+    } else {
+      ok("Zähler kleiner: Weiche gefunden und gerastert", false, true);
+    }
+    box.remove();
+  }
+
+  // Auf allen Formaten: kein Bogen der Weiche enger als die übrigen Ecken.
+  // Vorher kam die Ecke des Strangs auf breiten wie schmalen Flächen nur auf
+  // ein Drittel davon, weil sie sich das kurze Stück zum Abzweig teilen musste.
+  for (const [w, h] of [[1000, 500], [560, 620], [340, 900]]) {
+    const { svg, box } = ohneFluss(w, h);
+    const g = svg.querySelector("g.weiche");
+    const vb = svg.getAttribute("viewBox").split(" ").map(Number);
+    const a = Math.min(0.78, Math.max(0.56, vb[2] / vb[3]));
+    const W = Math.min(vb[2], vb[3] * a);
+    const kleinster = g ? Math.min(...[...g.querySelectorAll("path")].map((p) => Math.max(...radien(p.getAttribute("d"))))) : 0;
+    ok(`Weiche ${w}x${h}: kein Bogen enger als die übrigen Ecken`, kleinster > 0.045 * W - 0.5, true);
+    box.remove();
+  }
+
   // --- Radiale Anfahrt ------------------------------------------------------
   // Das letzte Stück jeder Linie zeigt auf die Mitte des Kreises, in den sie
   // läuft. Sonst liegt die runde Kappe quer zum Ring und schmiert darüber.
