@@ -30,8 +30,10 @@ const DREI = [
   { name: "Wärmepumpe", icon: "mdi:heat-pump", power: "sensor.wp" },
   { name: "Werkstatt", icon: "mdi:printer-3d", power: ["sensor.werk1", "sensor.werk2"] },
 ];
+// Die Prüfungen aus den ersten beiden Betas meinen „an Stelle des Hauses“ –
+// damals die Vorgabe, seit beta.3 eine Auswahl. Sie sagen es jetzt ausdrücklich.
 const bau = (cfg, states, w, h) => karte({ sources: [{ power: "sensor.pv" }], grid: "sensor.netz",
-  house: "sensor.haus", consumers: DREI, ...cfg }, states || S(), w || 390, h || 700);
+  house: "sensor.haus", consumers: DREI, consumers_from: "replace", ...cfg }, states || S(), w || 390, h || 700);
 const texte = (svg) => [...svg.querySelectorAll("text")].map((t) => t.textContent);
 
 // Die Kugeln: der erste Kreis jeder Knotengruppe.
@@ -125,7 +127,7 @@ const querDurch = (svg) => {
   {
     const a = karte({ sources: [{ power: "sensor.pv" }], grid: "sensor.netz", house: "sensor.haus" }, S());
     const b = karte({ sources: [{ power: "sensor.pv" }], grid: "sensor.netz", house: "sensor.haus",
-      consumers: [{ name: "Alles", power: "sensor.haus" }] }, S());
+      consumers: [{ name: "Alles", power: "sensor.haus" }], consumers_from: "replace" }, S());
     const haus = kugeln(a.svg).find((c) => c.text.includes("Zuhause"));
     const einer = kugeln(b.svg).find((c) => c.text.includes("Alles"));
     ok("ein Verbraucher: an der Stelle des Hauses",
@@ -236,7 +238,7 @@ const querDurch = (svg) => {
   {
     ok("Editor: eigene Seite für Verbraucher", SEITEN.some((s) => s.id === "consumers" && s.liste), true);
     ok("Editor: höchstens drei", KIND.consumers.max, 3);
-    const schema = JSON.stringify(KIND.consumers.schema({}));
+    const schema = JSON.stringify(KIND.consumers.schema({}, { consumers_from: "replace" }));
     ok("Editor: Felder des Eintrags", ["name", "icon", "power_sources", "color", "rest"].every((n) => schema.includes(`"${n}"`)), true);
     ok("Editor: Rest an", KIND.consumers.fromForm({ name: "Haus", rest: true, power_sources: [] }).rest, true);
     ok("Editor: Rest aus steht nicht drin", KIND.consumers.fromForm({ power_sources: ["sensor.wp"], rest: false }).rest, undefined);
@@ -264,7 +266,9 @@ const querDurch = (svg) => {
     f.tippe("power_sources", ["sensor.wp"]); await warte();
     ok("Editor: zweiter Verbraucher mit Sensor", (stand.letzte.consumers[1] || {}).power, "sensor.wp");
     ok("Editor: der erste bleibt", (stand.letzte.consumers[0] || {}).rest, true);
-    ok("Hauptmenü sagt es", ed._zusammenfassung("consumers"), "2 von 3, einer als Rest");
+    // Mit einem Rest und ohne Anordnung gilt „an Stelle des Hauses“ – das
+    // sagt das Hauptmenü dann auch.
+    ok("Hauptmenü sagt es", ed._zusammenfassung("consumers"), "2 von 3, einer als Rest, statt des Hauses");
     let heil = true;
     try { document.createElement("power-flow-card-plus-mobile").setConfig(stand.letzte); } catch (e) { heil = e.message; }
     ok("die Karte nimmt die Konfiguration an", heil, true);
@@ -454,7 +458,13 @@ const querDurch = (svg) => {
     ok("Editor: Auswahl unter der Verbraucherliste",
       JSON.stringify(LISTEN_SCHEMA.consumers({})).includes("consumers_from"), true);
     ok("Editor: Vorgabe steht nicht drin",
-      fromForm({ ...toForm({ type: "x" }), consumers_from: "dist" }, { type: "x" }).consumers_from, undefined);
+      fromForm({ ...toForm({ type: "x" }), consumers_from: "beside" }, { type: "x" }).consumers_from, undefined);
+    ok("Editor: an Stelle des Hauses landet drin",
+      fromForm({ ...toForm({ type: "x" }), consumers_from: "replace" }, { type: "x" }).consumers_from, "replace");
+    ok("Editor: der alte Name dist wird zu replace", toForm({ type: "x", consumers_from: "dist" }).consumers_from, "replace");
+    ok("Editor: vier Anordnungen zur Wahl",
+      JSON.stringify(LISTEN_SCHEMA.consumers({})[0].selector.select.options.map((o) => o.value)),
+      JSON.stringify(["beside", "replace", "meter", "house"]));
     ok("Editor: Zähler landet drin",
       fromForm({ ...toForm({ type: "x" }), consumers_from: "meter" }, { type: "x" }).consumers_from, "meter");
     ok("Editor: hin und zurück", toForm({ type: "x", consumers_from: "house" }).consumers_from, "house");
@@ -473,6 +483,247 @@ const querDurch = (svg) => {
     ed.remove();
   }
 
+  // --- Neben dem Haus (Vorgabe seit beta.3) ----------------------------------
+  const NEBEN = [
+    { name: "Haus 2", power: "sensor.wp", included_in_house: true },
+    { name: "Firma", power: ["sensor.werk1", "sensor.werk2"], included_in_house: true },
+    { name: "Garten", power: "sensor.werk1" },
+  ];
+  const neben = (cfg, states, w, h) => karte({ sources: [{ power: "sensor.pv" }], grid: "sensor.netz",
+    house: "sensor.haus", consumers: NEBEN, ...cfg }, states || S(), w || 390, h || 700);
+  {
+    const { k, svg, box } = neben({ consumers: NEBEN.slice(0, 2) });
+    const v = k._readValues();
+    ok("neben dem Haus ist die Vorgabe", k._config.consumers_from, "beside");
+    ok("neben dem Haus: die Hauskugel bleibt", texte(svg).includes("Zuhause"), true);
+    ok("neben dem Haus: die Verbraucher stehen da", ["Haus 2", "Firma"].every((n) => texte(svg).includes(n)), true);
+    ok("neben dem Haus: Verbraucher im Hauszähler werden herausgerechnet", v.house, 6000 - 2500 - 1200);
+    ok("…und stehen als Abzug da", v.abzugVerbraucher, 3700);
+    ok("die Hauskugel zeigt, was übrig bleibt", texte(svg).includes(fmtPower(2300)), true);
+    ok("die Autarkie rechnet weiter mit dem ganzen Hauszähler", v.consumption, 6000);
+    box.remove();
+  }
+  {
+    // Ohne die Markierung steckt nichts im Hauszähler – nichts abzuziehen.
+    const { k, box } = neben({ consumers: [{ name: "Extra", power: "sensor.wp" }] });
+    ok("neben dem Haus, nicht im Zähler: Hauswert unverändert", k._readValues().house, 6000);
+    box.remove();
+  }
+  {
+    // An Stelle des Hauses und hinter dem Haus wird nichts abgezogen.
+    for (const wo of ["replace", "meter", "house"]) {
+      const { k, box } = neben({ consumers_from: wo, consumers: NEBEN.slice(0, 2) });
+      ok(`${wo}: kein Abzug aus dem Hauswert`, k._readValues().abzugVerbraucher, 0);
+      box.remove();
+    }
+  }
+  {
+    // Jeder Verbraucher hat seine eigene Leitung – vom Verteiler, im Raster
+    // über den Gang. Keine kommt von der Hauskugel.
+    for (const nV of [1, 2, 3]) {
+      const { k, svg, box } = neben({ consumers: NEBEN.slice(0, nV) });
+      const v = k._readValues();
+      const kg = kugeln(svg);
+      const haus = kg.find((c) => c.text.includes("Zuhause"));
+      const vk = kg.filter((c) => NEBEN.slice(0, nV).some((d) => c.text.includes(d.name)));
+      const pfade = bahnenAlle(svg).map((p) => punkte(p, 2));
+      const endetIn = (pt, c) => Math.hypot(pt[0] - c.x, pt[1] - c.y) < c.r + 1.5;
+      const angebunden = vk.filter((c) => pfade.some((q) => endetIn(q[2], c)));
+      ok(`neben dem Haus, ${nV}: jeder Verbraucher angebunden`, angebunden.length, nV);
+      ok(`neben dem Haus, ${nV}: keine Leitung von der Hauskugel`,
+        !!haus && pfade.filter((q) => endetIn(q[0], haus)).length, 0);
+      ok(`neben dem Haus, ${nV}: die Hauskugel hat ihre Leitung`, !!haus && pfade.some((q) => endetIn(q[2], haus)), true);
+      box.remove();
+    }
+  }
+  {
+    // Eigene Farbe: der erste Verbraucher neben dem Haus ist nicht hausgrün.
+    const { svg, box } = neben({ consumers: [{ name: "Daneben", power: "sensor.wp" }] });
+    const farben = [...svg.querySelectorAll("path.flow-dash")].map((p) => (p.getAttribute("stroke") || "").toUpperCase());
+    ok("neben dem Haus: der erste Verbraucher fließt nicht in Hausgrün", farben.includes("#FFB340"), true);
+    box.remove();
+  }
+  // Anordnung neben dem Haus, über alle Formate.
+  {
+    let fehler = [];
+    for (const [w, h] of [[390, 700], [1000, 500], [340, 900], [560, 620], [400, 760], [390, 580], [390, 460]]) {
+      for (const nQ of [0, 1, 2, 3, 4, 5]) for (const nV of [1, 2, 3])
+      for (const [nB, nW, autos] of [[0, 0, 0], [2, 1, 1], [2, 2, 1], [1, 2, 0]]) {
+        const cfg = {
+          sources: ["sensor.pv", "sensor.q2", "sensor.q3", "sensor.q2", "sensor.q3"].slice(0, nQ).map((p) => ({ power: p })),
+          consumers: NEBEN.slice(0, nV),
+          batteries: [{ power: "sensor.b1", soc: "sensor.soc" }, { power: "sensor.b1", soc: "sensor.soc" }].slice(0, nB),
+          wallboxes: [{ power: "sensor.wb1", ...(autos ? { car: "sensor.a1" } : {}) },
+                      { power: "sensor.wb2", ...(autos ? { car: "sensor.a2" } : {}) }].slice(0, nW),
+        };
+        const { svg, box } = neben(cfg, S(), w, h);
+        const name = `${w}x${h} q${nQ} v${nV} b${nB} w${nW}${autos ? "a" : ""}`;
+        const k = kugeln(svg);
+        const vb = svg.getAttribute("viewBox").split(" ").map(Number);
+        const W = Math.min(vb[2], vb[3] * 0.78);
+        for (let i = 0; i < k.length; i++) {
+          if (k[i].x + k[i].r > vb[2] + 0.5 || k[i].y - k[i].r < -0.5 || k[i].y + k[i].r > vb[3] + 0.5) fehler.push(name + ": Rand");
+          for (let j = i + 1; j < k.length; j++) {
+            if (Math.hypot(k[i].x - k[j].x, k[i].y - k[j].y) < k[i].r + k[j].r + 0.018 * W) fehler.push(name + ": " + k[i].text.slice(0, 8) + "/" + k[j].text.slice(0, 8));
+          }
+        }
+        if (!k.some((c) => c.text.includes("Zuhause"))) fehler.push(name + ": kein Haus");
+        const vk = k.filter((c) => NEBEN.slice(0, nV).some((d) => c.text.includes(d.name)));
+        if (vk.length !== nV) fehler.push(name + ": " + vk.length + " Verbraucher");
+        else if (vk.some((c) => c.r < 0.06 * W - 0.5)) fehler.push(name + ": zu klein");
+        const q = querDurch(svg);
+        if (q.length) fehler.push(name + ": quer " + q.join(","));
+        box.remove();
+      }
+    }
+    ok("neben dem Haus: Anordnung sauber auf allen Formaten", fehler.slice(0, 5).join(" | "), "");
+  }
+
+  // --- Befunde der Gegenprüfung zu beta.3 -----------------------------------
+  {
+    // Die Konfiguration aus dem README von beta.2: ein Rest, keine Anordnung.
+    // Sie bleibt an Stelle des Hauses, statt neben dem Haus doppelt zu zählen.
+    const { k, svg, box } = karte({ sources: [{ power: "sensor.pv" }], grid: "sensor.netz", house: "sensor.haus",
+      consumers: DREI }, S());
+    ok("beta.2-Konfiguration mit Rest: bleibt an Stelle des Hauses", k._config.consumers_from, "replace");
+    ok("…und zeigt kein Haus daneben", texte(svg).includes("Zuhause"), false);
+    box.remove();
+  }
+  {
+    // Ausdrücklich neben dem Haus: der Rest wird nicht gerechnet.
+    const { k, svg, box } = neben({ consumers: DREI, consumers_from: "beside" });
+    const v = k._readValues();
+    ok("neben dem Haus: kein Rest", v.consumers.some((x) => x.rest), false);
+    ok("…die Hauskugel trägt den Hausverbrauch", v.house, 6000);
+    ok("…und nichts steht doppelt da", texte(svg).filter((t) => t === fmtPower(6000 - 2500 - 1200)).length, 0);
+    box.remove();
+  }
+  {
+    // Editor: neben dem Haus kein Rest-Schalter; beim Umschalten wird er abgeräumt.
+    const felderVon = (cfg) => {
+      const namen = [];
+      const geh = (s) => s.forEach((e) => (e.schema ? geh(e.schema) : namen.push(e.name)));
+      geh(KIND.consumers.schema({}, cfg));
+      return namen;
+    };
+    ok("Editor: neben dem Haus kein Rest-Schalter", felderVon({}).includes("rest"), false);
+    ok("Editor: an Stelle des Hauses mit Rest-Schalter", felderVon({ consumers_from: "replace" }).includes("rest"), true);
+    const { ed, stand } = editor({ type: "custom:power-flow-card-plus-mobile", house: "sensor.haus", consumers: DREI });
+    await warte(60);
+    ed._oeffne("consumers"); await warte();
+    const formen = [...ed.querySelectorAll("ha-form")];
+    formen[formen.length - 1].tippe("consumers_from", "beside"); await warte(60);
+    ok("Editor: Umschalten auf neben dem Haus steht in der Konfiguration", stand.letzte.consumers_from, "beside");
+    ok("Editor: dabei wird der Rest abgeräumt", (stand.letzte.consumers || []).some((x) => x && x.rest), false);
+    ok("Editor: die Sensoren der anderen bleiben", ((stand.letzte.consumers || [])[1] || {}).power, "sensor.wp");
+    ed.remove();
+  }
+  {
+    // Der Gang im Raster trägt die Netto-Summe der rechten Spalte, mit Vorzeichen.
+    const gang = (svg) => {
+      const kg = kugeln(svg);
+      const drin = (pt) => kg.some((c) => Math.hypot(pt[0] - c.x, pt[1] - c.y) < c.r + 1.5);
+      // Der Gang endet am Abzweig, den keine Kugel umgibt. Ruht er, liegt er
+      // nicht in der Weichen-Gruppe – also unter allen Bahnen suchen.
+      const p = bahnenAlle(svg).find((x) => !drin(punkte(x, 2)[2]));
+      if (!p) return null;
+      const punkt = [...svg.querySelectorAll("path.flow-dash")].find((x) => x.getAttribute("d") === p.getAttribute("d"));
+      return { fliesst: !!punkt, rueckwaerts: punkt ? parseFloat(punkt.style.getPropertyValue("--ppm-travel")) > 0 : null };
+    };
+    const mit = (a, c) => S({ "sensor.wp": zustand("sensor.wp", a, "W"), "sensor.werk1": zustand("sensor.werk1", c, "W") });
+    const drei = [{ name: "Oben", power: "sensor.wp" }, { name: "Unten links", power: "sensor.werk2" }, { name: "Unten rechts", power: "sensor.werk1" }];
+    let r = neben({ consumers: drei }, mit(-2000, 0));
+    let g = gang(r.svg);
+    ok("Gang: speist einer ein, fließt der Gang", g && g.fliesst, true);
+    ok("Gang: und zwar zum Verteiler hin", g && g.rueckwaerts, true);
+    r.box.remove();
+    r = neben({ consumers: drei }, mit(-2000, 700));
+    g = gang(r.svg);
+    ok("Gang: netto rückwärts, wenn mehr eingespeist als gezogen wird", g && g.rueckwaerts, true);
+    r.box.remove();
+    r = neben({ consumers: drei }, mit(15, 15));
+    g = gang(r.svg);
+    ok("Gang: ruhen beide Äste unter der Schwelle, ruht er auch", g && g.fliesst, false);
+    r.box.remove();
+  }
+  {
+    // Keine Rundungs-Schrumpfung: mit einer Quelle und ohne Wallboxen ist
+    // überall Platz, Haus und Verbraucher haben ihre volle Größe.
+    const abweichend = [];
+    for (let a = 0.56; a <= 0.781; a += 0.01) for (const nV of [1, 2]) {
+      const N = buildNodes(0, 0, [], 1, a, nV, false, "beside");
+      if (Math.abs(N.house.r - 0.1) > 1e-9 || Math.abs(N.con1.r - 0.085) > 1e-9) abweichend.push(`${a.toFixed(2)}/${nV}: ${(N.house.r / 0.1).toFixed(2)}`);
+    }
+    ok("neben dem Haus: volle Größe, wo Platz ist", abweichend.join(" "), "");
+  }
+  {
+    // Breite: keine Verbraucherleitung breiter als die Hausleitung, wenn der
+    // Verbraucher weniger trägt als das Haus.
+    const fehler = [];
+    for (const [w, h] of [[390, 700], [390, 580], [500, 700], [320, 600]]) for (const nV of [1, 2, 3]) {
+      const s = S({ "sensor.haus": zustand("sensor.haus", 6000, "W"), "sensor.wp": zustand("sensor.wp", 5000, "W"),
+        "sensor.werk1": zustand("sensor.werk1", 3000, "W"), "sensor.werk2": zustand("sensor.werk2", 1200, "W") });
+      const vb3 = [{ name: "A", power: "sensor.wp" }, { name: "B", power: "sensor.werk1" }, { name: "C", power: "sensor.werk2" }];
+      const { svg, box } = neben({ consumers: vb3.slice(0, nV) }, s, w, h);
+      const kg = kugeln(svg);
+      const haus = kg.find((c) => c.text.includes("Zuhause"));
+      const endetIn = (p, c) => { const q = punkte(p, 2)[2]; return Math.hypot(q[0] - c.x, q[1] - c.y) < c.r + 1.5; };
+      const hausLeitung = bahnenAlle(svg).find((p) => haus && endetIn(p, haus));
+      const verbraucherLeitungen = bahnenAlle(svg).filter((p) => kg.some((c) => vb3.slice(0, nV).some((d) => c.text.startsWith(d.name)) && endetIn(p, c)));
+      const hb = hausLeitung ? +hausLeitung.getAttribute("stroke-width") : 0;
+      const breiteste = Math.max(0, ...verbraucherLeitungen.map((p) => +p.getAttribute("stroke-width")));
+      if (!hausLeitung || breiteste > hb + 0.05) fehler.push(`${w}x${h} v${nV}: Haus ${hb.toFixed(2)} < ${breiteste.toFixed(2)}`);
+      box.remove();
+    }
+    ok("neben dem Haus: keine Verbraucherleitung breiter als die Hausleitung", fehler.join(" | "), "");
+  }
+
+  // --- Vorzeichen umdrehen ----------------------------------------------------
+  {
+    const s = S({ "sensor.wp": zustand("sensor.wp", -2500, "W") });
+    const { k, svg, box } = neben({ consumers: [{ name: "WP", power: "sensor.wp", invert: true }] }, s);
+    ok("umgedreht: negativ gemeldet wird positiv", k._readValues().consumers[0].power, 2500);
+    box.remove();
+    const r = neben({ consumers: [{ name: "Speist", power: "sensor.wp", color: "#00AAFF", included_in_house: true }] }, s);
+    ok("negativ: der Wert bleibt negativ stehen", texte(r.svg).includes("-2.50 kW"), true);
+    ok("negativ: wird nicht vom Haus abgezogen (das würde es größer machen)", r.k._readValues().house, 6000);
+    const bahn = [...r.svg.querySelectorAll("path.flow-dash")].find((p) => p.getAttribute("stroke") === "#00AAFF");
+    ok("negativ: die Linie fließt", !!bahn, true);
+    ok("negativ: sie läuft zum Verteiler hin", bahn ? parseFloat(bahn.style.getPropertyValue("--ppm-travel")) > 0 : null, true);
+    r.box.remove();
+  }
+
+  // --- Editor: Vorzeichen und „hinter dem Hauszähler“ -------------------------
+  {
+    const felderVon = (cfg) => {
+      const namen = [];
+      const geh = (s) => s.forEach((e) => (e.schema ? geh(e.schema) : namen.push(e.name)));
+      geh(KIND.consumers.schema({}, cfg));
+      return namen;
+    };
+    ok("Editor: Vorzeichen-Schalter", felderVon({}).includes("invert"), true);
+    ok("Editor: neben dem Haus gibt es „hinter dem Hauszähler“", felderVon({}).includes("included_in_house"), true);
+    ok("Editor: an Stelle des Hauses nicht", felderVon({ consumers_from: "replace" }).includes("included_in_house"), false);
+    ok("Editor: hinter dem Haus nicht", felderVon({ consumers_from: "meter" }).includes("included_in_house"), false);
+    const aus = KIND.consumers.fromForm({ power_sources: ["sensor.wp"], invert: true, included_in_house: true });
+    ok("Editor: beides landet in der Konfiguration", JSON.stringify([aus.invert, aus.included_in_house]), JSON.stringify([true, true]));
+    const ohne = KIND.consumers.fromForm({ power_sources: ["sensor.wp"], invert: false, included_in_house: false });
+    ok("Editor: aus steht nicht drin", JSON.stringify([ohne.invert, ohne.included_in_house]), JSON.stringify([undefined, undefined]));
+    // Wechselt die Anordnung, zeichnet die Seite neu – die Zeilen bekommen
+    // ihre passenden Felder.
+    const zeilen = (ed) => [...ed.querySelectorAll("details.zeile")];
+    const { ed } = editor({ type: "custom:power-flow-card-plus-mobile", house: "sensor.haus",
+      consumers: [{ name: "WP", power: "sensor.wp" }] });
+    await warte(60);
+    ed._oeffne("consumers"); await warte();
+    const zeileFelder = () => { const z = zeilen(ed)[0]; z.open = true; z.dispatchEvent(new Event("toggle")); return felder(z.querySelector("ha-form")); };
+    ok("Editor: Zeile neben dem Haus mit dem Schalter", zeileFelder().includes("included_in_house"), true);
+    const formen = [...ed.querySelectorAll("ha-form")];
+    formen[formen.length - 1].tippe("consumers_from", "replace"); await warte(60);
+    ok("Editor: nach dem Wechsel ohne den Schalter", zeileFelder().includes("included_in_house"), false);
+    ed.remove();
+  }
+
   // --- Symbole: ein einzelner Verbraucher trägt das Symbol des Hauses --------
   // Ohne Home Assistant gibt es kein <ha-icon>; ein Ersatz macht sichtbar,
   // welches Symbol die Karte gewählt hat. Ganz am Ende, weil er bleibt.
@@ -485,8 +736,14 @@ const querDurch = (svg) => {
     };
     const a = karte({ sources: [{ power: "sensor.pv" }], grid: "sensor.netz", house: "sensor.haus" }, S());
     const b = karte({ sources: [{ power: "sensor.pv" }], grid: "sensor.netz", house: "sensor.haus",
-      consumers: [{ name: "Alles", power: "sensor.haus" }] }, S());
+      consumers: [{ name: "Alles", power: "sensor.haus" }], consumers_from: "replace" }, S());
     ok("Symbol: der einzelne Verbraucher wie das Haus", symbol(b.svg, "Alles"), symbol(a.svg, "Zuhause"));
+    // Neben dem Haus trägt der erste Verbraucher nicht das Haus-Symbol – er
+    // stünde sonst wie ein zweites Haus daneben.
+    const n = karte({ sources: [{ power: "sensor.pv" }], grid: "sensor.netz", house: "sensor.haus",
+      consumers: [{ name: "Daneben", power: "sensor.wp" }] }, S());
+    ok("Symbol neben dem Haus: eigenes Symbol", symbol(n.svg, "Daneben") !== symbol(n.svg, "Zuhause"), true);
+    n.box.remove();
     ok("Symbol: das ist das Haus-Symbol", symbol(a.svg, "Zuhause"), "mdi:home-assistant");
     a.box.remove(); b.box.remove();
     const c = bau({});

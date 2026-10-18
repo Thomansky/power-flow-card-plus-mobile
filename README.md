@@ -179,8 +179,8 @@ colors:
 | `pv`, `external` | – | Ältere Schreibweise, wird auf die ersten beiden Quellen abgebildet. |
 | `grid` | – | Netzleistung, positiv = Bezug. Auch als Paar `consumption`/`production`. |
 | `house` | – | Hausverbrauch gesamt |
-| `consumers` | `[]` | *Beta.* Bis zu drei Verbraucher statt des Hauskreises. Je `power` (auch Liste), `name`, `icon`, `color`, `rest` (Hausverbrauch minus die anderen) – siehe unten. |
-| `consumers_from` | `dist` | *Beta.* Woher die Verbraucher gespeist werden: `dist` vom Verteiler, `meter` hinter einer kleinen Zählerkugel, `house` hinter der Hauskugel. |
+| `consumers` | `[]` | *Beta.* Bis zu drei Verbraucher. Je `power` (auch Liste), `name`, `icon`, `color`, `invert`, `included_in_house`, `rest` – siehe unten. |
+| `consumers_from` | `beside` | *Beta.* Wo die Verbraucher hängen: `beside` neben dem Haus, `replace` an seiner Stelle, `meter` hinter einer kleinen Zählerkugel, `house` hinter der Hauskugel. |
 | `grid_limit` | – | Einspeiselimit: Entität in W, kW oder %, oder feste Zahl in W. Siehe unten. |
 | `pv_peak` | – | Spitzenleistung der Anlage in kWp – nur nötig, wenn das Limit in % kommt |
 | `autarky` | – | Optional: eigener Sensor in % statt der Rechnung. Ist er nicht lesbar, rechnet die Karte und schreibt ein ≈ davor. |
@@ -544,98 +544,97 @@ ebenfalls nicht auf – sie ist ja gerade keine Quelle.
 
 ---
 
-## Verbraucher statt eines Hauses *(Beta)*
+## Verbraucher *(Beta)*
 
-Statt des einen Hauskreises lassen sich bis zu drei Verbraucher zeigen –
-etwa das Haus, die Wärmepumpe und die Werkstatt. Im Editor unter
-**Verbraucher**, in YAML:
+Neben dem Haus lassen sich bis zu drei Verbraucher zeigen – etwa ein zweites
+Haus, die Firma, die Wärmepumpe. Im Editor unter **Verbraucher**, in YAML:
 
 ```yaml
-house: sensor.e3dc_hausverbrauch     # bleibt der Gesamtzähler
+house: sensor.e3dc_hausverbrauch       # der Gesamtzähler
 consumers:
-  - name: Haus
-    rest: true                       # Hausverbrauch minus die anderen
-  - name: Wärmepumpe
-    icon: mdi:heat-pump
-    power: sensor.waermepumpe_leistung
-  - name: Werkstatt
-    icon: mdi:printer-3d
-    power:                           # mehrere Sensoren werden addiert
-      - sensor.drucker_1
-      - sensor.drucker_2
+  - name: Haus 2
+    icon: mdi:home-variant
+    power: sensor.haus_2_leistung
+    included_in_house: true            # steckt im Hauszähler mit drin
+  - name: Firma
+    icon: mdi:office-building
+    power:                             # mehrere Sensoren werden addiert
+      - sensor.firma_l1
+      - sensor.firma_l2
+    included_in_house: true
 ```
 
-**Ein Verbraucher darf der Rest sein** (`rest: true`, im Editor „Rest vom
-Hausverbrauch“). Er braucht keinen eigenen Sensor: Die Karte nimmt den
-Hausverbrauch unter `house` und zieht alle anderen Verbraucher ab. Das ist
-der typische Fall, wenn die Anlage einen Gesamtwert liefert und einzelne
-große Verbraucher gesondert gemessen werden. Ein Rest wird nie negativ; ohne
-Hausverbrauch steht dort „–“ statt einer 0, die wie ein Messwert aussähe.
-Hängen Wallboxen oder Speicher hinter dem Hauszähler, wird mit dem
-bereinigten Hauswert gerechnet. Nur einer kann der Rest sein: Schaltet man
-ihn im Editor bei einem anderen an, wandert er dorthin.
+Je Verbraucher: `power` (auch Liste), `name`, `icon`, `color`, und die drei
+Schalter unten. Antippen öffnet den Sensor.
 
-**Der Hausverbrauch bleibt der Gesamtverbrauch** – für die Autarkie und für
-den Rest. Ist keiner eingetragen, gilt die Summe der Verbraucher. Ist einer
-eingetragen, aber gerade nicht lesbar, bleibt die Autarkie leer – die Summe
-der übrigen wäre nur ein Teil des Verbrauchs.
+### Wo sie hängen
 
-**Wie sie stehen:** Ein einzelner Verbraucher steht genau dort, wo das Haus
-stand, und ist so groß wie es. Zwei oder drei stehen als Fächer rechts vom
-Verteilknoten: der erste auf dessen Linie mit der geraden Verbindung, der
-zweite rechts darüber, der dritte rechts darunter – ihre Leitungen laufen
-über und unter dem ersten hinweg. Die Wege zu den Wallboxen laufen unter dem
-Fächer durch. Wird es eng (breite Karte, fünf Quellen, Wallboxen), werden die
-Kreise etwas kleiner. Platz für die Wallboxen wird freigehalten, sobald
-welche eingerichtet sind, damit der Fächer nicht springt, wenn ein Auto zu
-laden beginnt.
-
-### Am Verteiler oder hinter dem Haus
-
-Woher die Verbraucher gespeist werden, lässt sich umstellen – im Editor unter
-der Verbraucherliste, in YAML mit `consumers_from`:
+Im Editor unter der Verbraucherliste, in YAML mit `consumers_from`:
 
 | Wert | Bild |
 |---|---|
-| `dist` *(Vorgabe)* | Verteiler → Verbraucher. Die Verbraucher ersetzen den Hauskreis (wie oben beschrieben). |
-| `meter` | Verteiler → **kleine Zählerkugel** → Verbraucher. Die Zählerkugel zeigt nur den Gesamtverbrauch, im Stil der beiden Sammelkugeln in der Mitte. |
-| `house` | Verteiler → **Hauskugel** → Verbraucher. Die gewohnte Hauskugel bleibt stehen, mit Herkunftsring. |
+| `beside` *(Vorgabe)* | **Neben dem Haus.** Das Haus bleibt stehen, die Verbraucher hängen daneben, jeder mit eigener Leitung vom Verteiler. |
+| `replace` | **An Stelle des Hauses.** Die Verbraucher ersetzen den Hauskreis. (In den ersten beiden Betas die Vorgabe, damals `dist` – das wird weiter verstanden. Ist ein Verbraucher der Rest und keine Anordnung angegeben, gilt weiter dies.) |
+| `meter` | **Hinter dem Haus, als kleine Zählerkugel.** Verteiler → Zählerkugel mit dem Gesamtverbrauch → Verbraucher. |
+| `house` | **Hinter dem Haus, als Hauskugel.** Verteiler → gewohnte Hauskugel → Verbraucher. |
 
-```yaml
-house: sensor.e3dc_hausverbrauch
-consumers_from: meter
-consumers:
-  - name: Haus 1
-    rest: true
-  - name: Haus 2
-    power: sensor.haus_2_leistung
-  - name: Firma
-    icon: mdi:office-building
-    power: sensor.firma_leistung
-```
+**Neben dem Haus** bleibt das Haus bei einem oder zwei Verbrauchern auf
+seiner Linie, etwas kleiner als allein; die Verbraucher stehen rechts darüber
+und darunter, und ihre Leitungen laufen über und unter dem Haus hinweg. Bei
+dreien reicht der Platz daneben nicht: dann stehen Haus und Verbraucher als
+Raster aus zwei mal zwei, das Haus links oben. Haus und der Verbraucher links
+unten bekommen je eine gerade Leitung vom Verteiler, zwischen ihnen hindurch
+läuft ein Gang zur rechten Spalte, der sich dort nach oben und unten teilt.
+Neben dem Haus tragen die Verbraucher eigene Vorgabefarben und -symbole, damit
+der erste nicht wie ein zweites Haus aussieht.
 
-Hinter dem Haus ist das Haus die Nabe, von der gerade Leitungen sternförmig
-zu den Verbrauchern gehen. Bei einem oder zwei Verbrauchern sitzt sie auf der
-Linie vom Verteiler. Bei dreien stehen Nabe und Verbraucher als Raster aus
-zwei mal zwei: links oben das Haus, rechts oben der erste, links unten der
-zweite, rechts unten der dritte – mit der schrägen Leitung durch die Mitte.
-Mehr Reihen gibt es zwischen den Leitungen der Quellen und den Wallboxen
-nicht.
+**An Stelle des Hauses** steht ein einzelner Verbraucher genau dort, wo das
+Haus stand; zwei oder drei stehen als Fächer rechts vom Verteiler, der erste
+auf dessen Linie, die anderen rechts darüber und darunter.
 
-Mit der **Zählerkugel** haben die Verbraucher ihre volle Größe. Mit der
-**vollen Hauskugel** sind Hauskugel und Verbraucher immer etwas kleiner
-(gut 85 bis 95 %), weil beide nebeneinander in die rechte Hälfte passen
-müssen – das hängt an der Breite, nicht an der Höhe. Nur mit drei
-Verbrauchern auf einer breiten Karte mit zwei oder drei Quellen wird es noch
-etwas enger; dort hilft eine höhere Karte (`min_height`).
+**Hinter dem Haus** ist das Haus die Nabe, von der gerade Leitungen
+sternförmig zu den Verbrauchern gehen – bei dreien als Raster aus zwei mal
+zwei mit der schrägen Leitung durch die Mitte. Die Nabe zeigt den
+Hausverbrauch (bereinigt um Geräte hinter dem Zähler), ohne Hauszähler die
+Summe der Verbraucher. Keine Leitung dahinter wird breiter gezeichnet als die
+Zuleitung, die die Summe trägt. Mit der Zählerkugel haben die Verbraucher
+ihre volle Größe, mit der Hauskugel sind alle Kreise dort etwas kleiner (gut
+85 bis 95 %), weil beide nebeneinander in die rechte Hälfte passen müssen.
 
-Die Nabe zeigt den Hausverbrauch (bereinigt um Geräte hinter dem Zähler);
-ohne Hauszähler die Summe der Verbraucher.
+In allen Anordnungen laufen die Wege zu den Wallboxen unter den Verbrauchern
+durch. Platz dafür wird freigehalten, sobald Wallboxen eingerichtet sind,
+damit nichts springt, wenn ein Auto zu laden beginnt. Wird es eng – breite
+Karte, viele Quellen, Wallboxen –, werden die Kreise etwas kleiner; eine
+höhere Karte (`min_height`) gibt ihnen Platz.
 
-Jeder Verbraucher trägt den Herkunftsring wie bisher das Haus
-(`house_mix`), seine Leitung und seine Fließpunkte tragen seine eigene Farbe.
-Der erste übernimmt Farbe und Symbol des Hauses. Antippen öffnet den Sensor –
-beim Rest den Hausverbrauch, aus dem er gerechnet ist.
+### Die drei Schalter
+
+**Hängt hinter dem Hauszähler** (`included_in_house: true`, nur neben dem
+Haus): Der Verbraucher steckt im Wert unter `house` mit drin – bei E3/DC etwa,
+wo der Hausverbrauch alles enthält. Die Hauskugel zeigt ihn dann ohne diesen
+Verbraucher, statt ihn doppelt zu zeigen; mit Haus 2 und Firma markiert
+zeigt sie also, was Haus 1 braucht. Wie bei den Wallboxen hinter dem Zähler.
+
+**Vorzeichen umdrehen** (`invert: true`): für Sensoren, die einen Verbrauch
+negativ melden. Bleibt ein Wert danach negativ – ein Verbraucher speist
+gerade ein –, zeigt die Karte ihn und lässt den Fluss zum Verteiler hin
+laufen. In keine Summe zählt er dann.
+
+**Rest vom Hausverbrauch** (`rest: true`, nur an Stelle des Hauses oder
+hinter ihm): Statt eines eigenen Sensors nimmt die Karte den Hausverbrauch und
+zieht alle anderen Verbraucher ab. Ein Rest wird nie negativ; ohne
+Hausverbrauch steht dort „–“ statt einer 0, die wie ein Messwert aussähe. Nur
+einer kann der Rest sein: Schaltet man ihn im Editor bei einem anderen an,
+wandert er dorthin. Neben dem Haus gibt es keinen Rest – die Hauskugel zeigt
+dort selbst, was übrig bleibt; dafür ist „Hängt hinter dem Hauszähler“ da.
+Wer im Editor auf „neben dem Haus“ umschaltet, verliert den Rest-Schalter.
+
+**Der Hausverbrauch bleibt der Gesamtverbrauch** für die Autarkie. Ist keiner
+eingetragen, gilt die Summe der Verbraucher; ist einer eingetragen, aber
+gerade nicht lesbar, bleibt die Autarkie leer.
+
+Jeder Verbraucher trägt den Herkunftsring wie das Haus (`house_mix`), seine
+Leitung und seine Fließpunkte tragen seine eigene Farbe.
 
 Das ist eine Beta: Rückmeldungen zur Anordnung sind willkommen.
 

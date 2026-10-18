@@ -23,7 +23,7 @@ Dann im Browser:
 | `test/limit.html` | Einspeiselimit: Watt, Prozent, Spitzenleistung, am Limit |
 | `test/strang.html` | Zähler am gemeinsamen Ladestrang statt der Summe |
 | `test/balkon.html` | Quellen nur anzeigen: Summe, Bilanz, gestrichelte Linie, Editor |
-| `test/verbraucher.html` | Verbraucher am Verteiler oder hinter dem Haus: Rest, Autarkie, Nabe, Anordnung auf fast 900 Kombinationen, Wege, Editor |
+| `test/verbraucher.html` | Verbraucher neben, statt oder hinter dem Haus: Rest, Abzug, Vorzeichen, Autarkie, Nabe, Anordnung auf rund 1400 Kombinationen, Wege, Editor |
 
 `lokaler-test.html` und `editor-test.html` sind Sichtprüfstände zum Anschauen,
 keine automatischen.

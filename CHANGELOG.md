@@ -5,6 +5,46 @@ die Versionsnummern [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unveröffentlicht]
 
+## [1.12.0-beta.3] – 2026-10-18
+
+### Geändert (Beta)
+
+* **Das Haus bleibt stehen.** Wer Verbraucher hinzufügt, verliert nicht mehr
+  den Hauskreis: Die neue Vorgabe ist `consumers_from: beside` – die
+  Verbraucher hängen neben dem Haus, jeder mit eigener Leitung vom Verteiler.
+  Bei einem oder zwei bleibt das Haus auf seiner Linie, die Verbraucher
+  stehen rechts darüber und darunter, ihre Leitungen laufen über und unter
+  dem Haus hinweg. Bei dreien stehen Haus und Verbraucher als Raster aus
+  zwei mal zwei; ein Gang zwischen Haus und unterem Verbraucher hindurch
+  teilt sich vor der rechten Spalte nach oben und unten. Neben dem Haus
+  tragen die Verbraucher eigene Vorgabefarben, -symbole und -namen.
+
+  Das bisherige Bild – Verbraucher an Stelle des Hauses – heißt jetzt
+  `replace` (früher `dist`, das weiter verstanden wird). Wer es behalten
+  will, wählt es im Editor unter der Verbraucherliste aus. Konfigurationen
+  mit einem Rest-Verbraucher und ohne Anordnung bleiben von selbst dabei –
+  neben dem Haus stünde der Rest sonst doppelt da, denn dort zeigt die
+  Hauskugel selbst, was übrig bleibt. Neben dem Haus gibt es deshalb keinen
+  Rest-Schalter. „Hinter dem Haus“ (`meter`, `house`) bleibt unverändert.
+
+  Im Raster bei drei Verbrauchern trägt der Gang die Netto-Summe der rechten
+  Spalte mit Vorzeichen; speist einer dort ein, läuft er bis zum Verteiler
+  rückwärts. Neben dem Haus wird keine Verbraucherleitung breiter gezeichnet
+  als die Hausleitung, wenn sie weniger trägt.
+
+### Neu (Beta)
+
+* **Hängt hinter dem Hauszähler** je Verbraucher (`included_in_house`, nur
+  neben dem Haus): Steckt der Verbraucher im Hauszähler mit drin, zeigt die
+  Hauskugel den Hausverbrauch ohne ihn, statt ihn doppelt zu zeigen – wie
+  bei den Wallboxen.
+* **Vorzeichen umdrehen** je Verbraucher (`invert`), wie bei den Quellen.
+  Ein negativer Wert bleibt stehen, der Fluss läuft dann zum Verteiler hin,
+  und in keine Summe zählt er.
+
+Ohne Verbraucher, und mit `replace`, `meter` oder `house`, ist die
+Darstellung Zeichen für Zeichen wie in beta.2.
+
 ## [1.12.0-beta.2] – 2026-10-11
 
 ### Neu (Beta)
@@ -580,7 +620,8 @@ Erste Veröffentlichung.
   hohe, schmale Flächen ausgelegt.
 * Reine Anzeige, es lässt sich nichts steuern.
 
-[Unveröffentlicht]: https://github.com/thomansky/power-flow-card-plus-mobile/compare/v1.12.0-beta.2...HEAD
+[Unveröffentlicht]: https://github.com/thomansky/power-flow-card-plus-mobile/compare/v1.12.0-beta.3...HEAD
+[1.12.0-beta.3]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.12.0-beta.3
 [1.12.0-beta.2]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.12.0-beta.2
 [1.12.0-beta.1]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.12.0-beta.1
 [1.11.1]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.11.1
