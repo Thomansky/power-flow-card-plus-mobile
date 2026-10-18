@@ -1,0 +1,251 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Prüfstand: viele Verbraucher</title>
+<body style="background:#0B0E13;margin:0;--divider-color:#444;--primary-text-color:#ddd">
+<script src="../power-flow-card-plus-mobile.js"></script>
+<script src="pruef.js"></script>
+<script>
+// Bis zu acht Verbraucher, gleichzeitig gezeigt werden so viele, wie Platz
+// haben: vier an Stelle des Hauses, sonst drei. Die stärksten, die laufen;
+// ruhende fallen weg, ohne Flackern, in der Reihenfolge der Liste.
+
+const ACHT = ["V1", "V2", "V3", "V4", "V5", "V6", "V7", "V8"]
+  .map((name, i) => ({ name, power: "sensor.v" + (i + 1), color: ["#FF0000", "#00FF00", "#0000FF", "#FFFF00", "#FF00FF", "#00FFFF", "#FF8800", "#8800FF"][i] }));
+const lage = (werte, extra) => {
+  const s = {
+    "sensor.pv": zustand("sensor.pv", 9000, "W"), "sensor.netz": zustand("sensor.netz", 1000, "W"),
+    "sensor.haus": zustand("sensor.haus", 8000, "W"),
+    "sensor.wb1": zustand("sensor.wb1", 6490, "W"), "sensor.wb2": zustand("sensor.wb2", 3950, "W"),
+    "sensor.a1": zustand("sensor.a1", 40, "%"), "sensor.a2": zustand("sensor.a2", 80, "%"),
+    "sensor.b1": zustand("sensor.b1", -800, "W"), "sensor.soc": zustand("sensor.soc", 55, "%"),
+  };
+  werte.forEach((w, i) => { s["sensor.v" + (i + 1)] = zustand("sensor.v" + (i + 1), w, "W"); });
+  return { ...s, ...(extra || {}) };
+};
+const bau = (cfg, states, w, h) => karte({ sources: [{ power: "sensor.pv" }], grid: "sensor.netz",
+  house: "sensor.haus", consumers: ACHT, ...cfg }, states, w || 390, h || 700);
+const texte = (svg) => [...svg.querySelectorAll("text")].map((t) => t.textContent);
+const gezeigt = (svg) => ACHT.map((c) => c.name).filter((n) => texte(svg).includes(n));
+const neuZeichnen = (k, states) => { k.hass = { states, themes: {}, language: "de" }; k._render(); };
+const j = (x) => JSON.stringify(x);
+
+const kugeln = (svg) => [...svg.querySelectorAll("g")]
+  .map((g) => g.querySelector(":scope > circle"))
+  .filter((c) => c && c.getAttribute("fill") !== "transparent" && c.getAttribute("fill") !== "none" && +c.getAttribute("r") > 5)
+  .map((c) => ({ x: +c.getAttribute("cx"), y: +c.getAttribute("cy"), r: +c.getAttribute("r"), text: c.parentNode.textContent }));
+const bahnenAlle = (svg) => [...svg.querySelectorAll("path")].filter((p) =>
+  !p.classList.contains("flow-dash") && p.getAttribute("fill") === "none" && p.getAttribute("stroke-width") &&
+  !p.closest("g:not(.weiche)"));
+const querDurch = (svg) => {
+  const k = kugeln(svg);
+  const fehler = [];
+  for (const p of bahnenAlle(svg)) {
+    const pts = punkte(p, 120);
+    const a = pts[0], e = pts[pts.length - 1];
+    const eigen = (c) => Math.hypot(a[0] - c.x, a[1] - c.y) < c.r + 3 || Math.hypot(e[0] - c.x, e[1] - c.y) < c.r + 3;
+    for (const c of k) {
+      if (eigen(c)) continue;
+      if (pts.some((q) => Math.hypot(q[0] - c.x, q[1] - c.y) < c.r - 0.5)) fehler.push(c.text.slice(0, 10));
+    }
+  }
+  return fehler;
+};
+
+(async () => {
+  // --- Die stärksten, die laufen ------------------------------------------
+  // V1 ruht, V2..V8 mit verschiedenen Leistungen; V5, V7, V3 sind die stärksten.
+  const W = [0, 300, 1500, 200, 2500, 100, 1800, 10];
+  {
+    const { k, svg, box } = bau({}, lage(W));
+    ok("neben dem Haus: die drei stärksten", j(gezeigt(svg)), j(["V3", "V5", "V7"]));
+    ok("…in der Reihenfolge der Liste", j(k._sichtbar), j([2, 4, 6]));
+    ok("…und das Haus bleibt", texte(svg).includes("Zuhause"), true);
+    box.remove();
+  }
+  {
+    const { svg, box } = bau({ consumers_from: "replace" }, lage(W));
+    ok("an Stelle des Hauses: die vier stärksten", j(gezeigt(svg)), j(["V2", "V3", "V5", "V7"]));
+    ok("…ohne Haus", texte(svg).includes("Zuhause"), false);
+    box.remove();
+  }
+  for (const wo of ["meter", "house"]) {
+    const { svg, box } = bau({ consumers_from: wo }, lage(W));
+    ok(`hinter dem Haus (${wo}): die drei stärksten`, j(gezeigt(svg)), j(["V3", "V5", "V7"]));
+    box.remove();
+  }
+
+  // --- Wer ausgeht, fällt weg; wer anspringt, rückt nach -----------------
+  {
+    const { k, svg, box } = bau({}, lage(W));
+    neuZeichnen(k, lage([0, 300, 0, 200, 2500, 100, 1800, 10]));
+    ok("V3 geht aus: V2 rückt nach", j(gezeigt(k.shadowRoot.querySelector("svg"))), j(["V2", "V5", "V7"]));
+    neuZeichnen(k, lage([0, 0, 0, 0, 0, 0, 0, 0]));
+    const s = k.shadowRoot.querySelector("svg");
+    ok("alle ruhen: keiner gezeigt", j(gezeigt(s)), j([]));
+    ok("…das Haus steht wie gewohnt", texte(s).includes("Zuhause"), true);
+    box.remove();
+  }
+  {
+    // Hinter dem Haus und alle ruhend: das Haus steht als gewohnte Kugel da,
+    // nicht als Nabe ohne Speichen.
+    const { svg, box } = bau({ consumers_from: "meter" }, lage([0, 0, 0, 0, 0, 0, 0, 0]));
+    ok("hinter dem Zähler, alle ruhend: gewohnte Hauskugel", texte(svg).includes("Zuhause"), true);
+    box.remove();
+  }
+
+  // --- Kein Flackern ------------------------------------------------------
+  {
+    const { k, box } = bau({}, lage([1000, 1000, 1000, 900, 0, 0, 0, 0]));
+    ok("Ausgang: die ersten drei", j(k._sichtbar), j([0, 1, 2]));
+    neuZeichnen(k, lage([1000, 1000, 950, 1050, 0, 0, 0, 0]));
+    ok("V4 knapp vorn: nichts tauscht", j(k._sichtbar), j([0, 1, 2]));
+    neuZeichnen(k, lage([1000, 1000, 950, 1300, 0, 0, 0, 0]));
+    ok("V4 deutlich vorn: verdrängt den schwächsten", j(k._sichtbar), j([0, 1, 3]));
+    box.remove();
+  }
+
+  // --- Farbe und Antippen hängen am Verbraucher, nicht am Platz ----------
+  {
+    const { k, svg, box } = bau({}, lage(W));
+    const farbenVon = (s) => [...s.querySelectorAll("path.flow-dash")].map((p) => (p.getAttribute("stroke") || "").toUpperCase());
+    ok("V5 fließt in seiner Farbe", farbenVon(svg).includes("#FF00FF"), true);
+    ok("V1 (ruhend, nicht gezeigt) fließt nirgends", farbenVon(svg).includes("#FF0000"), false);
+    let gemeldet = null;
+    k.addEventListener("hass-action", (ev) => { gemeldet = ev.detail.config.entity; });
+    const g = [...svg.querySelectorAll("g.node-hit")].find((x) => [...x.querySelectorAll("text")].some((t) => t.textContent === "V7"));
+    if (g) g.querySelector("circle[fill='transparent']").dispatchEvent(new Event("click", { bubbles: true }));
+    ok("Antippen auf V7 meldet V7", gemeldet, "sensor.v7");
+    box.remove();
+  }
+
+  // --- Wer nicht gezeigt wird, zählt weiter ------------------------------
+  {
+    const im = ACHT.map((c) => ({ ...c, included_in_house: true }));
+    const { k, box } = bau({ consumers: im }, lage(W));
+    const summe = W.reduce((a, x) => a + x, 0);
+    ok("Hauswert ohne alle im Zähler – auch die nicht gezeigten", k._readValues().house, 8000 - summe);
+    box.remove();
+  }
+
+  // --- Passen alle hin, sind alle zu sehen, auch ruhende -----------------
+  {
+    const { svg, box } = bau({ consumers: ACHT.slice(0, 3) }, lage([0, 0, 0]));
+    ok("drei neben dem Haus, alle ruhend: alle zu sehen", j(gezeigt(svg)), j(["V1", "V2", "V3"]));
+    box.remove();
+    const r = bau({ consumers: ACHT.slice(0, 4), consumers_from: "replace" }, lage([0, 0, 0, 0]));
+    ok("vier an Stelle des Hauses, alle ruhend: alle zu sehen", j(gezeigt(r.svg)), j(["V1", "V2", "V3", "V4"]));
+    r.box.remove();
+  }
+
+  // --- Vier an Stelle des Hauses: Raster, über alle Formate --------------
+  {
+    const fehler = [];
+    for (const [w, h] of [[390, 700], [1000, 500], [340, 900], [560, 620], [390, 580], [390, 460]]) {
+      for (const nQ of [0, 1, 2, 3, 5]) for (const [nB, nW, autos] of [[0, 0, 0], [2, 2, 1], [1, 2, 0], [2, 1, 1]]) {
+        const cfg = {
+          consumers_from: "replace", consumers: ACHT.slice(0, 4),
+          sources: ["sensor.pv", "sensor.v1", "sensor.v2", "sensor.v3", "sensor.v4"].slice(0, nQ).map((p) => ({ power: p })),
+          batteries: [{ power: "sensor.b1", soc: "sensor.soc" }, { power: "sensor.b1", soc: "sensor.soc" }].slice(0, nB),
+          wallboxes: [{ power: "sensor.wb1", ...(autos ? { car: "sensor.a1" } : {}) },
+                      { power: "sensor.wb2", ...(autos ? { car: "sensor.a2" } : {}) }].slice(0, nW),
+        };
+        const { svg, box } = bau(cfg, lage([1200, 800, 600, 400]), w, h);
+        const name = `${w}x${h} q${nQ} b${nB} w${nW}${autos ? "a" : ""}`;
+        const k = kugeln(svg);
+        const vb = svg.getAttribute("viewBox").split(" ").map(Number);
+        const Wb = Math.min(vb[2], vb[3] * 0.78);
+        for (let i = 0; i < k.length; i++) {
+          if (k[i].x + k[i].r > vb[2] + 0.5 || k[i].y - k[i].r < -0.5 || k[i].y + k[i].r > vb[3] + 0.5) fehler.push(name + ": Rand");
+          for (let jj = i + 1; jj < k.length; jj++) {
+            if (Math.hypot(k[i].x - k[jj].x, k[i].y - k[jj].y) < k[i].r + k[jj].r + 0.018 * Wb) fehler.push(name + ": " + k[i].text.slice(0, 6) + "/" + k[jj].text.slice(0, 6));
+          }
+        }
+        const vk = k.filter((c) => ["V1", "V2", "V3", "V4"].some((n) => c.text.startsWith(n)));
+        if (vk.length !== 4) fehler.push(name + ": " + vk.length + " Verbraucher");
+        else if (vk.some((c) => c.r < 0.06 * Wb - 0.5)) fehler.push(name + ": zu klein");
+        // Jeder Verbraucher hat eine Leitung, die in ihm endet.
+        const pfade = bahnenAlle(svg).map((p) => punkte(p, 2)[2]);
+        if (!vk.every((c) => pfade.some((q) => Math.hypot(q[0] - c.x, q[1] - c.y) < c.r + 1.5))) fehler.push(name + ": nicht angebunden");
+        const q = querDurch(svg);
+        if (q.length) fehler.push(name + ": quer " + q.join(","));
+        box.remove();
+      }
+    }
+    ok("vier an Stelle des Hauses: Raster sauber auf allen Formaten", fehler.slice(0, 5).join(" | "), "");
+  }
+
+  // --- Vorgaben wiederholen sich nicht ------------------------------------
+  {
+    ok("neun verschiedene Vorgabefarben", new Set(VERBRAUCHER_FARBE).size, 9);
+    ok("neun verschiedene Vorgabesymbole", new Set(VERBRAUCHER_ICON).size, 9);
+    // Neben dem Haus, acht ohne eigene Farben, V2..V4 laufen: der vierte
+    // fließt nicht in Hausgrün.
+    const ohneFarbe = ACHT.map(({ name, power }) => ({ name, power }));
+    const { svg, box } = bau({ consumers: ohneFarbe }, lage([0, 900, 800, 700, 0, 0, 0, 0]));
+    const gruen = [...svg.querySelectorAll("path.flow-dash")].filter((p) => (p.getAttribute("stroke") || "").toUpperCase() === "#3ED96B");
+    ok("neben dem Haus: nur das Haus fließt in Hausgrün", gruen.length, 1);
+    box.remove();
+  }
+
+  // --- Ohne Hauszähler, alle ruhend: das Haus zeigt die Summe, nicht „–“ ---
+  for (const wo of ["replace", "meter"]) {
+    const werte = [15, 15, 15, 15, 15];
+    const { svg, box } = karte({ sources: [{ power: "sensor.pv" }], grid: "sensor.netz", consumers_from: wo,
+      consumers: ACHT.slice(0, 5) }, lage(werte));
+    ok(`${wo}, ohne Hauszähler, alle ruhend: das Haus zeigt die Summe`, texte(svg).includes(fmtPower(75)), true);
+    ok(`${wo}, ohne Hauszähler, alle ruhend: kein Strich`, texte(svg).includes("–"), false);
+    box.remove();
+  }
+
+  // --- Der Gang im Raster trägt die rechte Spalte, über die Zuordnung -------
+  {
+    const gang = (svg) => {
+      const kg = kugeln(svg);
+      const drin = (pt) => kg.some((c) => Math.hypot(pt[0] - c.x, pt[1] - c.y) < c.r + 1.5);
+      const p = bahnenAlle(svg).find((x) => !drin(punkte(x, 2)[2]));
+      if (!p) return null;
+      const punkt = [...svg.querySelectorAll("path.flow-dash")].find((x) => x.getAttribute("d") === p.getAttribute("d"));
+      return { fliesst: !!punkt, farbe: punkt ? punkt.getAttribute("stroke").toUpperCase() : null };
+    };
+    // Neben dem Haus: gezeigt V3, V5, V7 – rechts stehen V3 (oben) und V7 (unten).
+    const { k, svg, box } = bau({}, lage(W));
+    let g = gang(svg);
+    ok("Gang neben dem Haus: fließt", g && g.fliesst, true);
+    ok("Gang neben dem Haus: in der Farbe des stärkeren rechts (V7)", g && g.farbe, "#FF8800");
+    neuZeichnen(k, lage([0, 300, 0, 200, 2500, 100, 1800, 10]));
+    g = gang(k.shadowRoot.querySelector("svg"));
+    ok("Gang nach dem Nachrücken: fließt weiter", g && g.fliesst, true);
+    box.remove();
+    // An Stelle des Hauses, vier: rechts stehen V2 (oben) und V4 (unten).
+    let r = bau({ consumers_from: "replace", consumers: ACHT.slice(0, 4) }, lage([1200, 800, 600, 400]));
+    g = gang(r.svg);
+    ok("Gang an Stelle des Hauses: in der Farbe von V2", g && g.farbe, "#00FF00");
+    r.box.remove();
+    r = bau({ consumers_from: "replace", consumers: ACHT.slice(0, 4) }, lage([1200, 0, 600, 0]));
+    g = gang(r.svg);
+    ok("Gang an Stelle des Hauses: rechte Spalte ruht, Gang ruht", g && g.fliesst, false);
+    r.box.remove();
+  }
+
+  // --- Editor -------------------------------------------------------------
+  {
+    ok("Editor: bis zu acht", KIND.consumers.max, 8);
+    const { ed } = editor({ type: "custom:power-flow-card-plus-mobile", house: "sensor.haus", consumers: ACHT.slice(0, 5) });
+    await warte(60);
+    ed._oeffne("consumers"); await warte();
+    const hinweis = ed.querySelector("p.hint").textContent;
+    ok("Editor: Hinweis, dass nur die stärksten gezeigt werden", hinweis.includes("drei stärksten"), true);
+    ok("Editor: noch Platz zum Hinzufügen", ed.querySelector("button.add").disabled, false);
+    ed.remove();
+    const voll = editor({ type: "custom:power-flow-card-plus-mobile", house: "sensor.haus", consumers: ACHT, consumers_from: "replace" });
+    await warte(60);
+    voll.ed._oeffne("consumers"); await warte();
+    ok("Editor: bei acht ist Schluss", voll.ed.querySelector("button.add").disabled, true);
+    ok("Editor: an Stelle des Hauses vier", voll.ed.querySelector("p.hint").textContent.includes("vier stärksten"), true);
+    ok("Hauptmenü zählt bis acht", voll.ed._zusammenfassung("consumers"), "8 von 8, statt des Hauses");
+    voll.ed.remove();
+  }
+
+  fertig();
+})();
+</script>

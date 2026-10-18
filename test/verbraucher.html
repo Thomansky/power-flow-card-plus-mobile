@@ -224,20 +224,23 @@ const querDurch = (svg) => {
     box.remove();
   }
 
-  // --- Vier sind zu viel --------------------------------------------------
+  // --- Neun sind zu viel, acht nicht -----------------------------------------
   {
-    let meldung = null;
-    try {
-      document.createElement("power-flow-card-plus-mobile").setConfig({ type: "x",
-        consumers: [1, 2, 3, 4].map((i) => ({ power: "sensor.wp", name: "V" + i })) });
-    } catch (e) { meldung = e.message; }
-    ok("vier Verbraucher werden abgelehnt", (meldung || "").includes("drei"), true);
+    const versuch = (n) => {
+      try {
+        document.createElement("power-flow-card-plus-mobile").setConfig({ type: "x",
+          consumers: [...Array(n).keys()].map((i) => ({ power: "sensor.wp", name: "V" + i })) });
+        return null;
+      } catch (e) { return e.message; }
+    };
+    ok("acht Verbraucher werden angenommen", versuch(8), null);
+    ok("neun Verbraucher werden abgelehnt", (versuch(9) || "").includes("acht"), true);
   }
 
   // --- Editor -------------------------------------------------------------
   {
     ok("Editor: eigene Seite für Verbraucher", SEITEN.some((s) => s.id === "consumers" && s.liste), true);
-    ok("Editor: höchstens drei", KIND.consumers.max, 3);
+    ok("Editor: höchstens acht", KIND.consumers.max, 8);
     const schema = JSON.stringify(KIND.consumers.schema({}, { consumers_from: "replace" }));
     ok("Editor: Felder des Eintrags", ["name", "icon", "power_sources", "color", "rest"].every((n) => schema.includes(`"${n}"`)), true);
     ok("Editor: Rest an", KIND.consumers.fromForm({ name: "Haus", rest: true, power_sources: [] }).rest, true);
@@ -268,7 +271,7 @@ const querDurch = (svg) => {
     ok("Editor: der erste bleibt", (stand.letzte.consumers[0] || {}).rest, true);
     // Mit einem Rest und ohne Anordnung gilt „an Stelle des Hauses“ – das
     // sagt das Hauptmenü dann auch.
-    ok("Hauptmenü sagt es", ed._zusammenfassung("consumers"), "2 von 3, einer als Rest, statt des Hauses");
+    ok("Hauptmenü sagt es", ed._zusammenfassung("consumers"), "2 von 8, einer als Rest, statt des Hauses");
     let heil = true;
     try { document.createElement("power-flow-card-plus-mobile").setConfig(stand.letzte); } catch (e) { heil = e.message; }
     ok("die Karte nimmt die Konfiguration an", heil, true);
@@ -479,7 +482,7 @@ const querDurch = (svg) => {
     unten.tippe("consumers_from", "meter"); await warte();
     ok("Editor: Auswahl kommt an", stand.letzte.consumers_from, "meter");
     ok("Editor: die Verbraucher bleiben", (stand.letzte.consumers || []).length, 2);
-    ok("Hauptmenü sagt es", ed._zusammenfassung("consumers"), "2 von 3, einer als Rest, hinter dem Zähler");
+    ok("Hauptmenü sagt es", ed._zusammenfassung("consumers"), "2 von 8, einer als Rest, hinter dem Zähler");
     ed.remove();
   }
 

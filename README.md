@@ -179,7 +179,7 @@ colors:
 | `pv`, `external` | – | Ältere Schreibweise, wird auf die ersten beiden Quellen abgebildet. |
 | `grid` | – | Netzleistung, positiv = Bezug. Auch als Paar `consumption`/`production`. |
 | `house` | – | Hausverbrauch gesamt |
-| `consumers` | `[]` | *Beta.* Bis zu drei Verbraucher. Je `power` (auch Liste), `name`, `icon`, `color`, `invert`, `included_in_house`, `rest` – siehe unten. |
+| `consumers` | `[]` | *Beta.* Bis zu acht Verbraucher; gleichzeitig gezeigt werden vier an Stelle des Hauses, sonst drei – die stärksten, die laufen. Je `power` (auch Liste), `name`, `icon`, `color`, `invert`, `included_in_house`, `rest` – siehe unten. |
 | `consumers_from` | `beside` | *Beta.* Wo die Verbraucher hängen: `beside` neben dem Haus, `replace` an seiner Stelle, `meter` hinter einer kleinen Zählerkugel, `house` hinter der Hauskugel. |
 | `grid_limit` | – | Einspeiselimit: Entität in W, kW oder %, oder feste Zahl in W. Siehe unten. |
 | `pv_peak` | – | Spitzenleistung der Anlage in kWp – nur nötig, wenn das Limit in % kommt |
@@ -546,8 +546,9 @@ ebenfalls nicht auf – sie ist ja gerade keine Quelle.
 
 ## Verbraucher *(Beta)*
 
-Neben dem Haus lassen sich bis zu drei Verbraucher zeigen – etwa ein zweites
-Haus, die Firma, die Wärmepumpe. Im Editor unter **Verbraucher**, in YAML:
+Neben dem Haus lassen sich Verbraucher zeigen – etwa ein zweites Haus, die
+Firma, die Wärmepumpe. Bis zu acht lassen sich eintragen. Im Editor unter
+**Verbraucher**, in YAML:
 
 ```yaml
 house: sensor.e3dc_hausverbrauch       # der Gesamtzähler
@@ -566,6 +567,25 @@ consumers:
 
 Je Verbraucher: `power` (auch Liste), `name`, `icon`, `color`, und die drei
 Schalter unten. Antippen öffnet den Sensor.
+
+### Mehr eingetragen, als Platz haben
+
+Rechts vom Verteiler ist Platz für vier Kreise. **An Stelle des Hauses**
+sind das vier Verbraucher, **neben oder hinter dem Haus** drei – das Haus
+belegt den vierten Platz. Ein fünfter Kreis ginge nur mit Kreisen, deren
+Schrift niemand mehr liest.
+
+Sind mehr eingetragen, zeigt die Karte **die stärksten, die gerade laufen**
+(über der Ruheschwelle `threshold`). Wer ausgeht, fällt weg; wer anspringt,
+rückt nach. Damit nichts flackert, wenn zwei etwa gleich viel ziehen,
+verdrängt ein Neuer einen Gezeigten erst, wenn er deutlich mehr zieht (gut
+15 % und 50 W). Die Gezeigten stehen in der Reihenfolge der Liste, nicht nach
+Leistung – sonst tauschten die Kreise bei jeder Schwankung die Plätze. Farbe
+und Symbol hängen am Verbraucher, nicht am Platz.
+
+Was nicht gezeigt wird, zählt weiter mit: im Hausverbrauch (wenn es hinter
+dem Hauszähler hängt), für einen Rest und für die Autarkie. Passen alle hin,
+sind alle zu sehen, auch die ruhenden – wie bisher.
 
 ### Wo sie hängen
 
@@ -590,7 +610,9 @@ der erste nicht wie ein zweites Haus aussieht.
 
 **An Stelle des Hauses** steht ein einzelner Verbraucher genau dort, wo das
 Haus stand; zwei oder drei stehen als Fächer rechts vom Verteiler, der erste
-auf dessen Linie, die anderen rechts darüber und darunter.
+auf dessen Linie, die anderen rechts darüber und darunter. Vier stehen im
+selben Raster aus zwei mal zwei wie Haus und drei Verbraucher daneben – der
+erste links oben, wo sonst das Haus steht.
 
 **Hinter dem Haus** ist das Haus die Nabe, von der gerade Leitungen
 sternförmig zu den Verbrauchern gehen – bei dreien als Raster aus zwei mal

@@ -5,6 +5,26 @@ die Versionsnummern [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unveröffentlicht]
 
+## [1.12.0-beta.4] – 2026-10-19
+
+### Neu (Beta)
+
+* **Bis zu acht Verbraucher.** Rechts vom Verteiler ist Platz für vier
+  Kreise: an Stelle des Hauses vier Verbraucher (im Raster aus zwei mal zwei),
+  neben oder hinter dem Haus drei. Sind mehr eingetragen, zeigt die Karte die
+  stärksten, die gerade laufen; wer ausgeht, fällt weg, wer anspringt, rückt
+  nach. Ein Neuer verdrängt einen Gezeigten erst, wenn er deutlich mehr
+  zieht (gut 15 % und 50 W), damit nichts flackert. Die Gezeigten stehen in
+  der Reihenfolge der Liste; Farbe und Symbol hängen am Verbraucher. Was nicht
+  gezeigt wird, zählt weiter in Hausverbrauch, Rest und Autarkie. Passen alle
+  hin, ändert sich nichts. Der Editor sagt unter der Liste, wie viele
+  gleichzeitig gezeigt werden.
+
+  Dazu neun eigene Vorgabefarben und -symbole, damit sich bei acht
+  Verbrauchern nichts wiederholt und keiner neben dem Haus dessen Farbe
+  trägt. Ruhen alle und ist kein Hauszähler eingetragen, zeigt die
+  Hauskugel die Summe der Verbraucher statt „–“.
+
 ## [1.12.0-beta.3] – 2026-10-18
 
 ### Geändert (Beta)
@@ -620,7 +640,8 @@ Erste Veröffentlichung.
   hohe, schmale Flächen ausgelegt.
 * Reine Anzeige, es lässt sich nichts steuern.
 
-[Unveröffentlicht]: https://github.com/thomansky/power-flow-card-plus-mobile/compare/v1.12.0-beta.3...HEAD
+[Unveröffentlicht]: https://github.com/thomansky/power-flow-card-plus-mobile/compare/v1.12.0-beta.4...HEAD
+[1.12.0-beta.4]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.12.0-beta.4
 [1.12.0-beta.3]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.12.0-beta.3
 [1.12.0-beta.2]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.12.0-beta.2
 [1.12.0-beta.1]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.12.0-beta.1

@@ -24,6 +24,7 @@ Dann im Browser:
 | `test/strang.html` | Zähler am gemeinsamen Ladestrang statt der Summe |
 | `test/balkon.html` | Quellen nur anzeigen: Summe, Bilanz, gestrichelte Linie, Editor |
 | `test/verbraucher.html` | Verbraucher neben, statt oder hinter dem Haus: Rest, Abzug, Vorzeichen, Autarkie, Nabe, Anordnung auf rund 1400 Kombinationen, Wege, Editor |
+| `test/viele.html` | Mehr Verbraucher als Platz: die stärksten, Wegfallen, Nachrücken, kein Flackern, vier im Raster |
 
 `lokaler-test.html` und `editor-test.html` sind Sichtprüfstände zum Anschauen,
 keine automatischen.
