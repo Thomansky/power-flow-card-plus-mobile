@@ -432,9 +432,24 @@ geschieht das beim Entfernen von allein.
    und das Auto ist für alles Weitere gesperrt.
 2. `wallbox:` **am Auto** – die feste Wahl von der Autoseite.
 3. `car_match` – die selbsttätige Suche, für alles, was dann noch offen ist.
+   Steht sie auf `off`, füllt die Reihenfolge der Autoliste die offenen
+   Wallboxen – aber nur mit Autos, die keine feste Wahl haben. Hat kein Auto
+   eine feste Wahl, bleibt es beim Alten: erstes Auto an die erste Wallbox.
+
+Name, Symbol und Ladestand kommen immer vom selben Auto. `car_name` und
+`car_icon` an einer Wallbox ohne eigenen `car:` gelten nur für das Auto, das
+der Reihe nach dort steht (erstes Auto, erste Wallbox), und gehen dann wie
+bisher seinem eigenen Namen vor. Steht ein Auto durch eine feste Wahl, durch
+Nachrücken oder durch `car_match` dort, zeigt die Karte nur seinen eigenen
+Namen und sein eigenes Symbol. Hat irgendein Auto eine feste Wahl, erscheint
+ein Auto, dessen Ladestand schon von Hand an einer Wallbox steht, nirgends
+sonst: Es rückt nicht nach, und seine eigene feste Wahl ruht. Ohne jede feste
+Wahl bleibt es beim Alten – dann kann die Reihenfolge es ein zweites Mal
+zeigen.
 
 Weil (1) alles andere schlägt, räumt der Editor eine alte Eintragung an der
-Wallbox weg, sobald ein Auto sich diese Wallbox aussucht. Sonst bliebe die Wahl
+Wallbox weg, sobald ein Auto sich diese Wallbox aussucht – und ebenso eine
+Eintragung desselben Autos an einer anderen Wallbox. Sonst bliebe die Wahl
 wirkungslos und niemand sähe, warum.
 
 ### Über den Ladestecker
@@ -515,8 +530,8 @@ Unterschied bleibt immer, deshalb sind 25 % Abweichung erlaubt
   bleibt das Auto ungezeigt.
 * **Gesucht wird die beste Gesamtaufteilung**, nicht das beste Einzelpaar. Sonst
   nimmt die sicherste Paarung ein Auto weg, das anderswo das einzig mögliche war.
-* Ohne `car_match` ändert sich nichts: die Autoliste wird dann wie bisher der
-  Reihe nach den Wallboxen zugeteilt.
+* Ohne `car_match` wird die Autoliste wie bisher der Reihe nach den Wallboxen
+  zugeteilt – nach den festen Wahlen, mit den Autos, die dann noch frei sind.
 
 ---
 

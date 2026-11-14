@@ -1146,17 +1146,11 @@ class PowerflowPlusMobileCard extends HTMLElement {
       throw new Error("Es lassen sich höchstens vier Wallboxen einrichten.");
     }
 
-    // Autos der Reihe nach den Wallboxen zuordnen, sofern dort keins
-    // eingetragen ist. Sucht die Karte sich die Zuordnung selbst, unterbleibt
-    // das – sonst stünde die feste Reihenfolge der Suche im Weg.
-    if (this._config.car_match === "off") this._config.wallboxes.forEach((w, i) => {
-      const alt = this._config.cars[i];
-      if (!w.car && alt && alt.soc) {
-        w.car = alt.soc;
-        w.car_name = w.car_name || alt.name;
-        w.car_icon = w.car_icon || alt.icon;
-      }
-    });
+    // Die Autos der Liste werden hier nicht mehr der Reihe nach an den
+    // Wallboxen eingetragen. Das geschah früher, und die Eintragung schlug
+    // dann jede feste Wahl im Automenü – samt einem alten Namen an der
+    // Wallbox, der sich mit dem Ladestand eines anderen Autos mischte. Die
+    // Reihenfolge gilt jetzt beim Lesen, nach der festen Wahl (_reiheAutos).
 
     // Einmal alle beobachteten Entitäten sammeln. Ohne das würde die Karte
     // bei jeder beliebigen Zustandsänderung im ganzen System neu zeichnen –
@@ -1242,17 +1236,54 @@ class PowerflowPlusMobileCard extends HTMLElement {
   /**
    * Feste Zuordnungen von der Autoseite: Wallbox-Nummer → Auto-Nummer.
    * Zeigen zwei Autos auf dieselbe Wallbox, gewinnt das erste – zwei Autos
-   * an einem Kabel gibt es nicht.
+   * an einem Kabel gibt es nicht. Steht der Ladestand eines Autos schon von
+   * Hand an einer Wallbox, gilt das, und seine Wahl ruht – sonst stünde es
+   * an zwei Kreisen.
    */
   _festeAutos(c) {
     const fest = {};
+    const vonHand = new Set(c.wallboxes.map((w) => w.car).filter(Boolean));
     c.cars.forEach((a, ai) => {
-      if (a.wallbox == null) return;
+      if (a.wallbox == null || (a.soc && vonHand.has(a.soc))) return;
       const wi = a.wallbox - 1;
       if (!c.wallboxes[wi] || c.wallboxes[wi].car) return;
       if (fest[wi] === undefined) fest[wi] = ai;
     });
     return fest;
+  }
+
+  /**
+   * Ohne Selbst-Zuordnung: welches Auto der Liste an einer Wallbox hängt, an
+   * der weder ein eigener Ladestand-Sensor steht noch ein Auto sie fest
+   * gewählt hat.
+   *
+   * Hat kein Auto eine Wallbox gewählt, der Reihe nach wie immer: das erste
+   * Auto an die erste Wallbox. Hat eines gewählt, steht es dort und nirgends
+   * sonst, und die übrigen rücken der Reihe nach auf die übrigen Wallboxen –
+   * sonst stünde dasselbe Auto zweimal da, und ein anderes gar nicht. Aus
+   * demselben Grund rückt kein Auto nach, dessen Ladestand schon von Hand an
+   * einer Wallbox steht, und keines, das eine Wallbox genannt hat: Wer
+   * „hängt an Wallbox 1“ sagt, meint nicht „notfalls auch an einer anderen“.
+   * So hält es auch die Selbst-Zuordnung.
+   */
+  _reiheAutos(c, feste) {
+    const reihe = {};
+    if (c.car_match !== "off") return reihe;
+    const gueltig = (a) => a.wallbox != null && !!c.wallboxes[a.wallbox - 1];
+    if (!c.cars.some(gueltig)) {
+      c.wallboxes.forEach((w, i) => {
+        if (!w.car && c.cars[i] && c.cars[i].soc) reihe[i] = i;
+      });
+      return reihe;
+    }
+    const vonHand = new Set(c.wallboxes.map((w) => w.car).filter(Boolean));
+    const frei = c.cars.map((a, i) => i)
+      .filter((i) => c.cars[i].soc && !gueltig(c.cars[i]) && !vonHand.has(c.cars[i].soc));
+    c.wallboxes.forEach((w, i) => {
+      if (w.car || feste[i] !== undefined || !frei.length) return;
+      reihe[i] = frei.shift();
+    });
+    return reihe;
   }
 
   _ordneAutosZu(c) {
@@ -1532,20 +1563,31 @@ class PowerflowPlusMobileCard extends HTMLElement {
     }));
     const paare = this._ordneAutosZu(c);
     const feste = this._festeAutos(c);
+    const reihe = this._reiheAutos(c, feste);
     const wallboxes = c.wallboxes.map((w, i) => {
       // Reihenfolge: was an der Wallbox steht, dann was das Auto sagt,
       // dann was die Karte selbst gefunden hat.
-      const nummer = feste[i] !== undefined ? feste[i] : paare[i];
+      const nummer = feste[i] !== undefined ? feste[i]
+        : reihe[i] !== undefined ? reihe[i]
+        : paare[i];
       const auto = w.car ? null : c.cars[nummer];
       const soc = w.car || (auto ? auto.soc : null);
+      // Name und Symbol gehören zu dem Auto, dessen Ladestand gezeigt wird.
+      // Name und Symbol an der Wallbox ohne eigenen Sensor gelten nur, wo sie
+      // schon immer galten: wenn das Auto der Reihe nach dort steht – erstes
+      // Auto an der ersten Wallbox. Dann gehen sie dem Auto vor, wie früher.
+      // Steht es durch eine feste Wahl, durch Nachrücken oder durch die
+      // Selbst-Zuordnung dort, zählen nur seine eigenen; sonst stünde der
+      // Name des einen Autos neben dem Ladestand des anderen.
+      const nachReihe = !!auto && feste[i] === undefined && reihe[i] === i;
       return {
         index: i,
         power: this._sum(w.power),
         name: w.name,
         icon: w.icon,
         carSoc: this._pctVal(soc),
-        carName: (w.car ? w.car_name : auto && auto.name) || "Auto",
-        carIcon: (w.car ? w.car_icon : auto && auto.icon) || null,
+        carName: (w.car || nachReihe ? w.car_name : null) || (auto && auto.name) || "Auto",
+        carIcon: (w.car || nachReihe ? w.car_icon : null) || (auto && auto.icon) || null,
         // Worauf ein Tipp auf den Autokreis zeigt.
         carRef: soc,
         hatAuto: !!soc,
@@ -2803,17 +2845,23 @@ const SEL_ICON = { icon: {} };
 
 /**
  * Räumt die feste Eintragung an der Wallbox weg, die dieses Auto gerade
- * gewählt hat. Ohne das bliebe die Wahl wirkungslos: was an der Wallbox
- * steht, schlägt alles andere.
+ * gewählt hat – und eine Eintragung desselben Autos an einer anderen
+ * Wallbox. Ohne das bliebe die Wahl wirkungslos: was an der Wallbox steht,
+ * schlägt alles andere, und ein Auto, dessen Ladestand schon von Hand an
+ * einer Wallbox steht, bleibt dort.
  */
 function ohneAltesAuto(cfg, auto) {
   if (!auto || !auto.wallbox) return cfg;
-  const wbs = [...(cfg.wallboxes || [])];
-  const i = auto.wallbox - 1;
-  if (!wbs[i] || !wbs[i].car) return cfg;
-  const w = { ...wbs[i] };
-  delete w.car; delete w.car_name; delete w.car_icon;
-  wbs[i] = w;
+  const ziel = auto.wallbox - 1;
+  let geaendert = false;
+  const wbs = (cfg.wallboxes || []).map((w, i) => {
+    if (!w || !w.car || (i !== ziel && w.car !== auto.soc)) return w;
+    geaendert = true;
+    const k = { ...w };
+    delete k.car; delete k.car_name; delete k.car_icon;
+    return k;
+  });
+  if (!geaendert || !wbs[ziel]) return cfg;
   return { ...cfg, wallboxes: wbs };
 }
 
@@ -2902,7 +2950,8 @@ const HELFER = {
     "Fest zuordnen, ohne Suche. „Selbst zuordnen“ überlässt es der " +
     "Einstellung unter der Liste. Was an der Wallbox selbst unter „Auto an " +
     "dieser Wallbox“ steht, schlägt beides – deshalb räumt die Karte das dort " +
-    "weg, sobald hier eine Wallbox gewählt wird.",
+    "weg, sobald hier eine Wallbox gewählt wird, und ebenso dieses Auto, wo " +
+    "es an einer anderen Wallbox von Hand eingetragen ist.",
   invert:
     "Anschalten, wenn der Sensor mit dem umgekehrten Vorzeichen meldet – eine " +
     "Erzeugung negativ, ein Verbrauch negativ. Ist der Wert danach negativ " +

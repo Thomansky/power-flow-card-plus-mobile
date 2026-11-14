@@ -229,6 +229,36 @@ const auswahl = (form, name) => {
     ed.remove();
   }
 
+  // --- Wallbox wählen: dasselbe Auto von Hand an einer anderen wird geräumt --
+  // Sonst ruhte die Wahl, weil die Eintragung von Hand gilt.
+  {
+    const { ed, stand } = editor({ type: "custom:power-flow-card-plus-mobile", house: "sensor.haus",
+      wallboxes: [{ power: "sensor.wb1", name: "Garage", car: "sensor.a1", car_name: "Skoda" },
+                  { power: "sensor.wb2", name: "Hof", car: "sensor.b1", car_name: "VW" },
+                  { power: "sensor.wb3", name: "Carport" }],
+      cars: [{ soc: "sensor.a1", name: "Skoda" }] });
+    await warte(60);
+    ed._oeffne("cars"); await warte();
+    const f = oeffne(zeilen(ed)[0]);
+    f.tippe("wallbox", "3"); await warte();
+    ok("andere Wallbox: Wahl gespeichert", stand.letzte.cars[0].wallbox, 3);
+    ok("andere Wallbox: dasselbe Auto von Hand geräumt", stand.letzte.wallboxes[0].car, undefined);
+    ok("andere Wallbox: auch sein Name dort", stand.letzte.wallboxes[0].car_name, undefined);
+    ok("andere Wallbox: die Wallbox selbst bleibt", stand.letzte.wallboxes[0].name, "Garage");
+    ok("andere Wallbox: ein fremdes Auto bleibt", stand.letzte.wallboxes[1].car, "sensor.b1");
+    ok("andere Wallbox: sein Name bleibt", stand.letzte.wallboxes[1].car_name, "VW");
+    // Die Karte zeigt danach genau eine Skoda, an der gewählten Wallbox.
+    const k = document.createElement("power-flow-card-plus-mobile");
+    k.setConfig(stand.letzte);
+    const leer = (id, v, u) => ({ entity_id: id, state: String(v), attributes: { unit_of_measurement: u } });
+    k._hass = { states: { "sensor.haus": leer("sensor.haus", 1000, "W"), "sensor.a1": leer("sensor.a1", 40, "%"), "sensor.b1": leer("sensor.b1", 80, "%"),
+      "sensor.wb1": leer("sensor.wb1", 0, "W"), "sensor.wb2": leer("sensor.wb2", 0, "W"), "sensor.wb3": leer("sensor.wb3", 0, "W") }, themes: {}, language: "de" };
+    ok("andere Wallbox: die Karte zeigt sie dort",
+      JSON.stringify(k._readValues().wallboxes.map((w) => (w.hatAuto ? w.carName + " " + w.carSoc : null))),
+      JSON.stringify([null, "VW 80", "Skoda 40"]));
+    ed.remove();
+  }
+
   // --- Wallbox hat ein Steckerfeld; die Karte nimmt die Konfiguration an ----
   {
     const { ed, stand } = editor({ type: "custom:power-flow-card-plus-mobile", house: "sensor.haus" });

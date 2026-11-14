@@ -5,6 +5,29 @@ die Versionsnummern [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unveröffentlicht]
 
+## [1.12.0-beta.5] – 2026-11-14
+
+### Behoben
+
+* **Feste Wahl am Auto zeigte den falschen Ladestand.** Ohne Selbst-Zuordnung
+  (`car_match: off`) trug die Karte beim Laden der Einstellungen die Autos der
+  Reihe nach an den Wallboxen ein – erstes Auto an die erste Wallbox. Diese
+  Eintragung schlug die feste Wahl im Automenü. Stand an der Wallbox noch ein
+  alter Name, mischte er sich mit dem Ladestand eines anderen Autos: Am Kreis
+  stand „Skoda“, gezeigt wurde der Ladestand des anderen Wagens. Jetzt gilt
+  die feste Wahl, und die Reihenfolge füllt nur noch die Wallboxen, die danach
+  offen sind, mit den Autos, die keine feste Wahl haben und deren Ladestand
+  nicht schon von Hand an einer Wallbox steht. Name, Symbol und Ladestand
+  kommen immer vom selben Auto: Name und Symbol an einer Wallbox ohne eigenen
+  Sensor gelten nur für das Auto, das der Reihe nach dort steht. Wer keinem
+  Auto eine feste Wallbox gibt, sieht alles wie bisher.
+* **Feste Wahl und Eintragung von Hand.** Stand der Ladestand eines Autos von
+  Hand an einer Wallbox und hatte dasselbe Auto eine feste Wahl für eine
+  andere, erschien es an beiden. Jetzt gilt die Eintragung von Hand, wie
+  beschrieben, und die feste Wahl ruht. Wer im Editor eine Wallbox für ein
+  Auto wählt, dem räumt der Editor deshalb auch die Eintragung desselben
+  Autos an einer anderen Wallbox weg – so wirkt die Wahl.
+
 ## [1.12.0-beta.4] – 2026-10-19
 
 ### Neu (Beta)
@@ -640,7 +663,8 @@ Erste Veröffentlichung.
   hohe, schmale Flächen ausgelegt.
 * Reine Anzeige, es lässt sich nichts steuern.
 
-[Unveröffentlicht]: https://github.com/thomansky/power-flow-card-plus-mobile/compare/v1.12.0-beta.4...HEAD
+[Unveröffentlicht]: https://github.com/thomansky/power-flow-card-plus-mobile/compare/v1.12.0-beta.5...HEAD
+[1.12.0-beta.5]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.12.0-beta.5
 [1.12.0-beta.4]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.12.0-beta.4
 [1.12.0-beta.3]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.12.0-beta.3
 [1.12.0-beta.2]: https://github.com/thomansky/power-flow-card-plus-mobile/releases/tag/v1.12.0-beta.2

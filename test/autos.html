@@ -138,6 +138,86 @@ const pruefe = (name, cfg, states, soll) => {
                   "binary_sensor.a2_plug": zustand("binary_sensor.a2_plug", "irgendwas", null, 20) }), [null, null]);
   pruefe("ohne Autos bleibt es leer", { wallboxes: ZWEI_WB, car_match: "plug" }, steckerLage(), [null, null]);
 
+  // --- Feste Wahl ohne Selbst-Zuordnung: Name UND Ladestand ------------------
+  // Mit „Aus“ verteilte die Karte die Autos zuerst der Reihe nach auf die
+  // Wallboxen und trug sie dort fest ein – die Wahl im Automenü kam dagegen
+  // nicht mehr an. Geprüft wurden bisher nur die Namen, nie der Ladestand.
+  // (Auto A hat 40 %, Auto B 80 %.)
+  const paar = (k) => k._readValues().wallboxes.map((w) => (w.hatAuto ? w.carName + " " + w.carSoc : null));
+  const pruefePaar = (name, cfg, soll) => {
+    const { k, box } = bau(cfg, leistungsLage());
+    ok(name, j(paar(k)), j(soll));
+    box.remove();
+  };
+  pruefePaar("aus, B fest an WB1: B mit seinem Ladestand dort, A rückt an WB2",
+    { wallboxes: ZWEI_WB, cars: [ZWEI_AUTOS[0], { ...ZWEI_AUTOS[1], wallbox: 1 }] }, ["Auto B 80", "Auto A 40"]);
+  pruefePaar("aus, beide fest über Kreuz",
+    { wallboxes: ZWEI_WB, cars: [{ ...ZWEI_AUTOS[0], wallbox: 2 }, { ...ZWEI_AUTOS[1], wallbox: 1 }] }, ["Auto B 80", "Auto A 40"]);
+  // Ein Name an der Wallbox ohne Ladestand-Sensor – etwa von einer früheren
+  // Eintragung – mischte sich mit dem Ladestand eines anderen Autos.
+  pruefePaar("aus, Name an der Wallbox ohne Sensor: Name und Ladestand vom selben Auto",
+    { wallboxes: [{ ...ZWEI_WB[0], car_name: "Auto B" }, ZWEI_WB[1]], cars: [ZWEI_AUTOS[0], { ...ZWEI_AUTOS[1], wallbox: 1 }] },
+    ["Auto B 80", "Auto A 40"]);
+  pruefePaar("aus, ohne feste Wahl: der Reihe nach wie immer",
+    { wallboxes: ZWEI_WB, cars: ZWEI_AUTOS }, ["Auto A 40", "Auto B 80"]);
+  pruefePaar("aus, Sensor an der Wallbox schlägt die Reihe – wie immer",
+    { wallboxes: [{ ...ZWEI_WB[0], car: "sensor.a2_soc", car_name: "Fest B" }, ZWEI_WB[1]], cars: ZWEI_AUTOS },
+    ["Fest B 80", "Auto B 80"]);
+  pruefePaar("Leistung, B fest an WB1: B mit seinem Ladestand",
+    { wallboxes: ZWEI_WB, cars: [ZWEI_AUTOS[0], { ...ZWEI_AUTOS[1], wallbox: 1 }], car_match: "power" }, ["Auto B 80", "Auto A 40"]);
+
+  // Name, Ladestand und Symbol zusammen. Name und Symbol an der Wallbox ohne
+  // eigenen Sensor gelten nur für das Auto, das der Reihe nach dort steht.
+  const trio = (k) => k._readValues().wallboxes.map((w) => (w.hatAuto ? w.carName + " " + w.carSoc + " " + w.carIcon : null));
+  const DREI_WB = [...ZWEI_WB, { power: "sensor.wb3", name: "WB3" }];
+  const AUTO_C = { soc: "sensor.a3_soc", name: "Auto C" };
+  const dreiLage = () => leistungsLage({ "sensor.wb3": zustand("sensor.wb3", 0, "W"), "sensor.a3_soc": zustand("sensor.a3_soc", 60, "%") });
+  const pruefeTrio = (name, cfg, soll, lage) => {
+    const { k, box } = bau(cfg, (lage || leistungsLage)());
+    ok(name, j(trio(k)), j(soll));
+    box.remove();
+  };
+  // Ohne feste Wahl wie früher: der Name an der Wallbox geht dem Auto vor.
+  pruefeTrio("aus, ohne feste Wahl: Name und Symbol der Wallbox wie früher",
+    { wallboxes: [{ ...ZWEI_WB[0], car_name: "Mein", car_icon: "mdi:wb" }, ZWEI_WB[1]],
+      cars: [{ ...ZWEI_AUTOS[0], icon: "mdi:a" }, ZWEI_AUTOS[1]] },
+    ["Mein 40 mdi:wb", "Auto B 80 null"]);
+  // Autos ohne Namen, eines fest an WB2, an WB1 ein alter Name: der gehört
+  // nicht zu dem Auto, das jetzt nachrückt.
+  pruefeTrio("aus, Autos ohne Namen, eines fest: kein fremder Name von der Wallbox",
+    { wallboxes: [{ ...ZWEI_WB[0], car_name: "Skoda", car_icon: "mdi:skoda" }, ZWEI_WB[1]],
+      cars: [{ soc: "sensor.a1_soc", wallbox: 2 }, { soc: "sensor.a2_soc" }] },
+    ["Auto 2 80 null", "Auto 1 40 null"]);
+  // Die Selbst-Zuordnung hat Name und Symbol der Wallbox nie gelesen.
+  pruefeTrio("Leistung, Autos ohne Namen: kein Name und kein Symbol von der Wallbox",
+    { wallboxes: [{ ...ZWEI_WB[0], car_name: "Skoda", car_icon: "mdi:skoda" }, ZWEI_WB[1]],
+      cars: [{ soc: "sensor.a1_soc", power: "sensor.a1_power" }, { soc: "sensor.a2_soc", power: "sensor.a2_power" }], car_match: "power" },
+    ["Auto 2 80 null", "Auto 1 40 null"]);
+  pruefeTrio("Leistung, Autos mit Namen: kein fremdes Symbol von der Wallbox",
+    { wallboxes: [{ ...ZWEI_WB[0], car_icon: "mdi:skoda" }, ZWEI_WB[1]], cars: ZWEI_AUTOS, car_match: "power" },
+    ["Auto B 80 null", "Auto A 40 null"]);
+  // Ein Ladestand von Hand an der Wallbox sperrt das Auto auch fürs Nachrücken.
+  pruefeTrio("aus, Sensor von Hand an WB1, C fest an WB3: B rückt an WB2, A nicht doppelt",
+    { wallboxes: [{ ...DREI_WB[0], car: "sensor.a1_soc" }, DREI_WB[1], DREI_WB[2]],
+      cars: [...ZWEI_AUTOS, { ...AUTO_C, wallbox: 3 }] },
+    ["Auto 40 null", "Auto B 80 null", "Auto C 60 null"], dreiLage);
+  // Wer eine besetzte Wallbox nennt, rückt nicht anderswohin aus.
+  pruefeTrio("aus, B nennt die von Hand besetzte WB1: A nicht doppelt, B nicht woanders",
+    { wallboxes: [{ ...ZWEI_WB[0], car: "sensor.a1_soc" }, ZWEI_WB[1]], cars: [ZWEI_AUTOS[0], { ...ZWEI_AUTOS[1], wallbox: 1 }] },
+    ["Auto 40 null", null]);
+  // Steht der Ladestand eines Autos von Hand an einer Wallbox, ruht seine
+  // eigene Wahl – sonst stünde es an zwei Kreisen.
+  pruefeTrio("Leistung, B von Hand an WB1 und fest an WB2: nur einmal",
+    { wallboxes: [{ ...ZWEI_WB[0], car: "sensor.a2_soc", car_name: "Hand" }, ZWEI_WB[1]],
+      cars: [ZWEI_AUTOS[0], { ...ZWEI_AUTOS[1], wallbox: 2 }], car_match: "power" },
+    ["Hand 80 null", "Auto A 40 null"]);
+  // Steht ein Auto trotz fester Wahl eines anderen auf seinem Listenplatz,
+  // gilt der Name der Wallbox wie früher.
+  pruefeTrio("aus, C fest an WB3, A auf seinem Platz: Name der Wallbox gilt",
+    { wallboxes: [{ ...DREI_WB[0], car_name: "Mein" }, DREI_WB[1], DREI_WB[2]],
+      cars: [...ZWEI_AUTOS, { ...AUTO_C, wallbox: 3 }] },
+    ["Mein 40 null", "Auto B 80 null", "Auto C 60 null"], dreiLage);
+
   fertig();
 })();
 </script>
